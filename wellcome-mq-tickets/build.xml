@@ -1,0 +1,8 @@
+<project name="goobi-plugin-step-metscreation" default="devbuild">
+	<target name="devbuild">
+		<exec executable="mvn">
+			<arg value="package"/>
+		</exec>
+		<copy file="target/wellcome-mq-tickets.jar" todir="/opt/digiverso/goobi/lib"/>
+	</target>
+</project>
