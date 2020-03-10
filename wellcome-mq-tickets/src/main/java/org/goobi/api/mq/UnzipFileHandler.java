@@ -107,8 +107,11 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
 
         } catch (IOException e) {
             log.error(e);
+            FileUtils.deleteQuietly(zipFile.toFile());
+            FileUtils.deleteQuietly(workDir.toFile());
             return PluginReturnValue.ERROR;
         }
+
         return PluginReturnValue.FINISH;
     }
 

@@ -88,6 +88,8 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             Files.copy(in, tempFile);
         } catch (IOException e) {
             log.error(e);
+            FileUtils.deleteQuietly(tempFile.toFile());
+            FileUtils.deleteQuietly(tempDir.toFile());
             return PluginReturnValue.ERROR;
         }
 
@@ -97,6 +99,8 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             StorageProvider.getInstance().copyFile(tempFile, destinationFile);
         } catch (IOException e) {
             log.error(e);
+            FileUtils.deleteQuietly(tempFile.toFile());
+            FileUtils.deleteQuietly(tempDir.toFile());
             return PluginReturnValue.ERROR;
         }
 
