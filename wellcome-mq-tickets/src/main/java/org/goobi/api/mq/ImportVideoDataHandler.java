@@ -75,7 +75,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         boolean mxfFound = false;
 
         for (String filename : filenamesInFolder) {
-            String suffix = filename.substring(filename.indexOf("."));
+            String suffix = filename.substring(filename.indexOf(".") + 1);
             switch (suffix) {
 
                 case "jpg":
