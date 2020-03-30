@@ -10,7 +10,9 @@ import org.goobi.beans.Process;
 import org.goobi.beans.Step;
 import org.goobi.production.enums.PluginReturnValue;
 
+import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.transfer.Copy;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
 
@@ -58,7 +60,12 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
                 .withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024))
                 .build();
 
-        tm.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
+        Copy copy = tm.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
+        try {
+            copy.waitForCompletion();
+        } catch (AmazonClientException | InterruptedException e) {
+            log.error(e);
+        }
 
         // check if the upload is complete
         List<String> filenamesInFolder = StorageProvider.getInstance().list(destinationFolder.toString());
