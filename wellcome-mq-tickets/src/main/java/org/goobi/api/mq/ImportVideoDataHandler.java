@@ -11,6 +11,8 @@ import org.goobi.beans.Step;
 import org.goobi.production.enums.PluginReturnValue;
 
 import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.transfer.TransferManager;
+import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
 
 import de.sub.goobi.config.ConfigurationHelper;
 import de.sub.goobi.helper.CloseStepHelper;
@@ -51,7 +53,12 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             destinationFile = destinationFolder.resolve(s3Key);
         }
 
-        s3.copyObject(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
+        TransferManager tm = TransferManagerBuilder.standard()
+                .withS3Client(s3)
+                .withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024))
+                .build();
+
+        tm.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
 
         // check if the upload is complete
         List<String> filenamesInFolder = StorageProvider.getInstance().list(destinationFolder.toString());
