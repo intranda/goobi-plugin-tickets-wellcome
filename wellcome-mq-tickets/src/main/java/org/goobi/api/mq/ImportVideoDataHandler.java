@@ -4,7 +4,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
@@ -12,6 +11,8 @@ import org.goobi.production.enums.PluginReturnValue;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.Copy;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
@@ -42,7 +43,6 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
 
         Path destinationFolder = Paths.get(ticket.getProperties().get("destination"));
 
-        Path tempDir = Paths.get(ticket.getProperties().get("targetDir"));
         log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
 
         AmazonS3 s3 = S3FileUtils.createS3Client();
@@ -101,6 +101,12 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             }
         }
 
+        String deleteFiles = ticket.getProperties().get("deleteFiles");
+        if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
+            s3.deleteObject(bucket, s3Key);
+            log.info("deleted file from bucket");
+        }
+
         // upload is complete, if poster + mpg or poster + mp4 + mxf are available
         if ((posterFound && mpegFound) || (posterFound && mp4Found && mxfFound)) {
             // close current task
@@ -116,16 +122,16 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             if (stepToClose != null) {
                 CloseStepHelper.closeStep(stepToClose, null);
             }
-        }
 
-        String deleteFiles = ticket.getProperties().get("deleteFiles");
-        if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
-            s3.deleteObject(bucket, s3Key);
-            log.info("deleted file from bucket");
+            //delete everything under parent prefix
+            if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
+                String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
+                ObjectListing listing = s3.listObjects(bucket, prefix);
+                for (S3ObjectSummary os : listing.getObjectSummaries()) {
+                    s3.deleteObject(bucket, os.getKey());
+                }
+            }
         }
-
-        // delete temporary files
-        FileUtils.deleteQuietly(tempDir.toFile());
 
         return PluginReturnValue.FINISH;
     }
