@@ -35,7 +35,16 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
     public PluginReturnValue call(TaskTicket ticket) {
 
         String source = ticket.getProperties().get("filename");
-        String destination = ticket.getProperties().get("destination");
+
+        String tifFolder = ticket.getProperties().get("tifFolder");
+
+        if (StringUtils.isBlank(tifFolder)) {
+            tifFolder = ticket.getProperties().get("destination");
+        }
+        String jp2Folder = ticket.getProperties().get("jp2Folder");
+        if (StringUtils.isBlank(jp2Folder)) {
+            jp2Folder = ticket.getProperties().get("destination");
+        }
         Path workDir = null;
         Path zipFile = null;
         try {
@@ -76,12 +85,21 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                 log.error(e1);
             }
 
-            Path imagesDir = Paths.get(destination);
-            if (!Files.exists(imagesDir)) {
-                Files.createDirectories(imagesDir);
+            Path masterDir = Paths.get(tifFolder);
+            Path derivativeDir = Paths.get(jp2Folder);
+
+            if (!Files.exists(masterDir)) {
+                Files.createDirectories(masterDir);
+            }
+            if (!Files.exists(derivativeDir)) {
+                Files.createDirectories(derivativeDir);
             }
             for (Path object : objectFiles) {
-                StorageProvider.getInstance().copyFile(object, imagesDir.resolve(object.getFileName()));
+                if (object.getFileName().toString().toLowerCase().endsWith("jp2")) {
+                    StorageProvider.getInstance().copyFile(object, derivativeDir.resolve(object.getFileName()));
+                } else {
+                    StorageProvider.getInstance().copyFile(object, masterDir.resolve(object.getFileName()));
+                }
             }
 
             String closeStepValue = ticket.getProperties().get("closeStep");
