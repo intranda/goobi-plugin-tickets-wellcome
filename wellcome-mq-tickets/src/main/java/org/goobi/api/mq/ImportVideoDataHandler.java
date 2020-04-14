@@ -1,47 +1,23 @@
 package org.goobi.api.mq;
 
-/**
- * This file is part of the Goobi Application - a Workflow tool for the support of mass digitization.
- * 
- * Visit the websites for more information.
- *          - https://goobi.io
- *          - https://www.intranda.com
- *          - https://github.com/intranda/goobi
- * 
- * This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 2 of the License, or (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License along with this program; if not, write to the Free Software Foundation, Inc., 59
- * Temple Place, Suite 330, Boston, MA 02111-1307 USA
- * 
- * Linking this library statically or dynamically with other modules is making a combined work based on this library. Thus, the terms and conditions
- * of the GNU General Public License cover the whole combination. As a special exception, the copyright holders of this library give you permission to
- * link this library with independent modules to produce an executable, regardless of the license terms of these independent modules, and to copy and
- * distribute the resulting executable under terms of your choice, provided that you also meet, for each linked independent module, the terms and
- * conditions of the license of that module. An independent module is a module which is not derived from or based on this library. If you modify this
- * library, you may extend this exception to your version of the library, but you are not obliged to do so. If you do not wish to do so, delete this
- * exception statement from your version.
- */
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
 import org.goobi.production.enums.PluginReturnValue;
 
+import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
+import com.amazonaws.services.s3.transfer.Copy;
+import com.amazonaws.services.s3.transfer.TransferManager;
+import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
 
+import de.sub.goobi.config.ConfigurationHelper;
 import de.sub.goobi.helper.CloseStepHelper;
 import de.sub.goobi.helper.S3FileUtils;
 import de.sub.goobi.helper.StorageProvider;
@@ -51,9 +27,8 @@ import lombok.extern.log4j.Log4j2;
 
 /**
  * 
- * This class is used to import video data from s3 upload storage into a given process.
- * The upload is considered as complete if the process contains either a jpg + mpg or a jpg + mp4 + mxf file.
- * If the upload was completed, the current open step gets closed.
+ * This class is used to import video data from s3 upload storage into a given process. The upload is considered as complete if the process contains
+ * either a jpg + mpg or a jpg + mp4 + mxf file. If the upload was completed, the current open step gets closed.
  * 
  */
 
@@ -68,40 +43,28 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
 
         Path destinationFolder = Paths.get(ticket.getProperties().get("destination"));
 
-        Path tempDir = Paths.get(ticket.getProperties().get("targetDir"));
-        log.debug("download {} to {}", s3Key, destinationFolder);
+        log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
 
         AmazonS3 s3 = S3FileUtils.createS3Client();
 
         int index = s3Key.lastIndexOf('/');
-        Path tempFile;
         Path destinationFile;
         if (index != -1) {
-            tempFile = tempDir.resolve(s3Key.substring(index + 1));
             destinationFile = destinationFolder.resolve(s3Key.substring(index + 1));
         } else {
-            tempFile = tempDir.resolve(s3Key);
             destinationFile = destinationFolder.resolve(s3Key);
         }
 
-        try (S3Object obj = s3.getObject(bucket, s3Key); InputStream in = obj.getObjectContent()) {
-            Files.copy(in, tempFile);
-        } catch (IOException e) {
-            log.error(e);
-            FileUtils.deleteQuietly(tempFile.toFile());
-            FileUtils.deleteQuietly(tempDir.toFile());
-            return PluginReturnValue.ERROR;
-        }
+        TransferManager tm = TransferManagerBuilder.standard()
+                .withS3Client(s3)
+                .withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024))
+                .build();
 
-        log.info("saved file to temporary folder {}", tempFile.toString());
-
+        Copy copy = tm.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
         try {
-            StorageProvider.getInstance().copyFile(tempFile, destinationFile);
-        } catch (IOException e) {
+            copy.waitForCompletion();
+        } catch (AmazonClientException | InterruptedException e) {
             log.error(e);
-            FileUtils.deleteQuietly(tempFile.toFile());
-            FileUtils.deleteQuietly(tempDir.toFile());
-            return PluginReturnValue.ERROR;
         }
 
         // check if the upload is complete
@@ -112,7 +75,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         boolean mxfFound = false;
 
         for (String filename : filenamesInFolder) {
-            String suffix = filename.substring(filename.indexOf("."));
+            String suffix = filename.substring(filename.indexOf(".") + 1);
             switch (suffix) {
 
                 case "jpg":
@@ -138,6 +101,12 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             }
         }
 
+        String deleteFiles = ticket.getProperties().get("deleteFiles");
+        if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
+            s3.deleteObject(bucket, s3Key);
+            log.info("deleted file from bucket");
+        }
+
         // upload is complete, if poster + mpg or poster + mp4 + mxf are available
         if ((posterFound && mpegFound) || (posterFound && mp4Found && mxfFound)) {
             // close current task
@@ -153,17 +122,16 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             if (stepToClose != null) {
                 CloseStepHelper.closeStep(stepToClose, null);
             }
-        }
 
-        String deleteFiles = ticket.getProperties().get("deleteFiles");
-        if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
-            s3.deleteObject(bucket, s3Key);
-            log.info("deleted file from bucket");
+            //delete everything under parent prefix
+            if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
+                String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
+                ObjectListing listing = s3.listObjects(bucket, prefix);
+                for (S3ObjectSummary os : listing.getObjectSummaries()) {
+                    s3.deleteObject(bucket, os.getKey());
+                }
+            }
         }
-
-        // delete temporary files
-        FileUtils.deleteQuietly(tempFile.toFile());
-        FileUtils.deleteQuietly(tempDir.toFile());
 
         return PluginReturnValue.FINISH;
     }
