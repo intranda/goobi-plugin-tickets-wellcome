@@ -43,7 +43,7 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
         }
         String jp2Folder = ticket.getProperties().get("jp2Folder");
         if (StringUtils.isBlank(jp2Folder)) {
-            jp2Folder = ticket.getProperties().get("destination");
+            jp2Folder = tifFolder;
         }
         Path workDir = null;
         Path zipFile = null;
