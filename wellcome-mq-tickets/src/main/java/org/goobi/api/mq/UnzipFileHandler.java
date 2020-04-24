@@ -94,32 +94,42 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
             if (!Files.exists(derivativeDir)) {
                 Files.createDirectories(derivativeDir);
             }
-            for (Path object : objectFiles) {
-                if (object.getFileName().toString().toLowerCase().endsWith("jp2")) {
-                    StorageProvider.getInstance().copyFile(object, derivativeDir.resolve(object.getFileName()));
-                } else {
-                    StorageProvider.getInstance().copyFile(object, masterDir.resolve(object.getFileName()));
-                }
-            }
 
-            String closeStepValue = ticket.getProperties().get("closeStep");
+            // list all existing files
+            List<String> files = StorageProvider.getInstance().list(masterDir.toString());
+            files.addAll(StorageProvider.getInstance().list(derivativeDir.toString()));
 
-            if (StringUtils.isNotBlank(closeStepValue) && "true".equals(closeStepValue)) {
-                Process process = ProcessManager.getProcessById(ticket.getProcessId());
 
-                Step stepToClose = null;
-
-                for (Step processStep : process.getSchritte()) {
-                    if (processStep.getBearbeitungsstatusEnum() == StepStatus.OPEN || processStep.getBearbeitungsstatusEnum() == StepStatus.INWORK) {
-                        // check against a list of configured step names ?
-                        stepToClose = processStep;
-                        break;
+            if (files.isEmpty()) {
+                // import the data only if the process is empty
+                for (Path object : objectFiles) {
+                    if (object.getFileName().toString().toLowerCase().endsWith("jp2")) {
+                        StorageProvider.getInstance().copyFile(object, derivativeDir.resolve(object.getFileName()));
+                    } else {
+                        StorageProvider.getInstance().copyFile(object, masterDir.resolve(object.getFileName()));
                     }
                 }
-                if (stepToClose != null) {
-                    CloseStepHelper.closeStep(stepToClose, null);
+
+                String closeStepValue = ticket.getProperties().get("closeStep");
+
+                if (StringUtils.isNotBlank(closeStepValue) && "true".equals(closeStepValue)) {
+                    Process process = ProcessManager.getProcessById(ticket.getProcessId());
+
+                    Step stepToClose = null;
+
+                    for (Step processStep : process.getSchritte()) {
+                        if (processStep.getBearbeitungsstatusEnum() == StepStatus.OPEN || processStep.getBearbeitungsstatusEnum() == StepStatus.INWORK) {
+                            // check against a list of configured step names ?
+                            stepToClose = processStep;
+                            break;
+                        }
+                    }
+                    if (stepToClose != null) {
+                        CloseStepHelper.closeStep(stepToClose, null);
+                    }
                 }
             }
+
             FileUtils.deleteQuietly(zipFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
 
