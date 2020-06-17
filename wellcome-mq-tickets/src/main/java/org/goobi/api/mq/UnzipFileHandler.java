@@ -13,8 +13,10 @@ import java.util.zip.ZipInputStream;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
+import org.goobi.beans.LogEntry;
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
+import org.goobi.production.enums.LogType;
 import org.goobi.production.enums.PluginReturnValue;
 
 import de.sub.goobi.helper.CloseStepHelper;
@@ -128,6 +130,10 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                         CloseStepHelper.closeStep(stepToClose, null);
                     }
                 }
+            } else {
+                LogEntry entry = LogEntry.build(ticket.getProcessId()).withContent("File import aborted, directory is not empty").withType(LogType.INFO);
+                entry.persist();
+
             }
 
             FileUtils.deleteQuietly(zipFile.toFile());
@@ -135,6 +141,8 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
 
         } catch (IOException e) {
             log.error(e);
+            LogEntry entry = LogEntry.build(ticket.getProcessId()).withContent(e.getMessage()).withType(LogType.ERROR);
+            entry.persist();
             FileUtils.deleteQuietly(zipFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
             return PluginReturnValue.ERROR;
