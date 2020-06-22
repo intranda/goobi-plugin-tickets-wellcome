@@ -75,6 +75,13 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
 
             try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(directory)) {
                 for (Path file : folderFiles) {
+                    if (Files.isDirectory(file)) {
+                        // found unexpected data
+                        LogEntry.build(ticket.getProcessId()).withContent("File import aborted, found unexpected sub folder in zip file.").withType(LogType.INFO).persist();
+                        FileUtils.deleteQuietly(zipFile.toFile());
+                        FileUtils.deleteQuietly(workDir.toFile());
+                        return PluginReturnValue.ERROR;
+                    }
                     String fileName = file.getFileName().toString();
                     String fileNameLower = fileName.toLowerCase();
                     if (fileNameLower.endsWith(".xml") && !fileNameLower.startsWith(".")) {
@@ -85,6 +92,13 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                 }
             } catch (IOException e1) {
                 log.error(e1);
+            }
+
+            if (objectFiles.isEmpty()) {
+                LogEntry.build(ticket.getProcessId()).withContent("File import aborted, found no files to import").withType(LogType.INFO).persist();
+                FileUtils.deleteQuietly(zipFile.toFile());
+                FileUtils.deleteQuietly(workDir.toFile());
+                return PluginReturnValue.ERROR;
             }
 
             Path masterDir = Paths.get(tifFolder);
@@ -133,7 +147,6 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
             } else {
                 LogEntry entry = LogEntry.build(ticket.getProcessId()).withContent("File import aborted, directory is not empty").withType(LogType.INFO);
                 entry.persist();
-
             }
 
             FileUtils.deleteQuietly(zipFile.toFile());
