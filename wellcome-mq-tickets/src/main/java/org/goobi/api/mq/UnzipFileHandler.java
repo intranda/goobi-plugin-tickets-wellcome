@@ -75,7 +75,7 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
 
             try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(directory)) {
                 for (Path file : folderFiles) {
-                    if (Files.isDirectory(file)) {
+                    if (Files.isDirectory(file) && !file.getFileName().toString().startsWith("__MAC") ) {
                         // found unexpected data
                         LogEntry.build(ticket.getProcessId()).withContent("File import aborted, found unexpected sub folder in zip file.").withType(LogType.INFO).persist();
                         FileUtils.deleteQuietly(zipFile.toFile());
