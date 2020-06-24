@@ -73,6 +73,8 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         boolean mpegFound = false;
         boolean mp4Found = false;
         boolean mxfFound = false;
+        // TODO set pdfFound to false to activate the pdf import
+        boolean pdfFound = true;
 
         for (String filename : filenamesInFolder) {
             String suffix = filename.substring(filename.indexOf(".") + 1);
@@ -98,6 +100,10 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
                 case "MXF":
                     mxfFound = true;
                     break;
+                case "pdf":
+                case "PDF":
+                    pdfFound = true;
+                    break;
             }
         }
 
@@ -108,7 +114,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         }
 
         // upload is complete, if poster + mpg or poster + mp4 + mxf are available
-        if ((posterFound && mpegFound) || (posterFound && mp4Found && mxfFound)) {
+        if ( posterFound && pdfFound && ((mpegFound) || (mp4Found && mxfFound))) {
             // close current task
             Process process = ProcessManager.getProcessById(ticket.getProcessId());
             Step stepToClose = null;
