@@ -16,8 +16,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.XMLConfiguration;
@@ -90,8 +88,8 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         Path directory = null;
         try {
             workDir = Files.createTempDirectory(UUID.randomUUID().toString());
-            unzip(zipfFile, workDir);
-            directory = workDir;
+            directory= UnzipFileHandler.unzip(zipfFile, workDir);
+
         } catch (IOException e2) {
             log.error(e2);
             FileUtils.deleteQuietly(zipfFile.toFile());
@@ -103,19 +101,6 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
 
         Path csvFile = null;
         // check if the extracted file contains a sub folder
-        try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(directory)) {
-            for (Path file : folderFiles) {
-                if (Files.isDirectory(file) && !file.getFileName().toString().startsWith("__MAC")) {
-                    directory = file;
-                    break;
-                }
-            }
-        } catch (IOException e1) {
-            log.error(e1);
-            FileUtils.deleteQuietly(zipfFile.toFile());
-            FileUtils.deleteQuietly(workDir.toFile());
-            return PluginReturnValue.ERROR;
-        }
 
         try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(directory)) {
             for (Path file : folderFiles) {
@@ -559,21 +544,4 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         return ff;
     }
 
-    private void unzip(final Path zipFile, final Path output) throws IOException {
-        try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(zipFile))) {
-            ZipEntry entry;
-            while ((entry = zipInputStream.getNextEntry()) != null) {
-                final Path toPath = output.resolve(entry.getName());
-                if (entry.isDirectory()) {
-                    Files.createDirectory(toPath);
-                } else {
-                    Path directory = toPath.getParent();
-                    if (!Files.exists(directory)) {
-                        Files.createDirectory(directory);
-                    }
-                    Files.copy(zipInputStream, toPath);
-                }
-            }
-        }
-    }
 }

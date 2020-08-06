@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
+import javax.jms.JMSException;
+
 import org.apache.commons.lang.StringUtils;
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
@@ -40,8 +42,15 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         String bucket = ticket.getProperties().get("bucket");
 
         String s3Key = ticket.getProperties().get("s3Key");
-
-        Path destinationFolder = Paths.get(ticket.getProperties().get("destination"));
+        String type;
+        Path destinationFolder;
+        if (s3Key.endsWith(".zip")) {
+            type = "audio";
+            destinationFolder = Paths.get(ticket.getProperties().get("targetDir"));
+        } else {
+            type = "video";
+            destinationFolder = Paths.get(ticket.getProperties().get("destination"));
+        }
 
         log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
 
@@ -55,16 +64,29 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             destinationFile = destinationFolder.resolve(s3Key);
         }
 
-        TransferManager tm = TransferManagerBuilder.standard()
-                .withS3Client(s3)
-                .withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024))
-                .build();
+        TransferManager tm = TransferManagerBuilder.standard().withS3Client(s3).withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024)).build();
 
         Copy copy = tm.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
         try {
             copy.waitForCompletion();
         } catch (AmazonClientException | InterruptedException e) {
             log.error(e);
+        }
+
+        if (type.equals("audio")) {
+            TaskTicket unzipTticket = TicketGenerator.generateSimpleTicket("unzip");
+            unzipTticket.setProcessId(ticket.getProcessId());
+            unzipTticket.setProcessName(ticket.getProcessName());
+            unzipTticket.setProperties(ticket.getProperties());
+            unzipTticket.setStepId(ticket.getStepId());
+            unzipTticket.setStepName(ticket.getStepName());
+            unzipTticket.getProperties().put("filename", destinationFolder.toString());
+            unzipTticket.getProperties().put("closeStep", "true");
+            try {
+                TicketGenerator.submitTicket(unzipTticket, QueueType.SLOW_QUEUE);
+            } catch (JMSException e) {
+                log.error(e);
+            }
         }
 
         // check if the upload is complete
@@ -114,7 +136,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         }
 
         // upload is complete, if poster + mpg or poster + mp4 + mxf are available
-        if ( posterFound && pdfFound && ((mpegFound) || (mp4Found && mxfFound))) {
+        if (posterFound && pdfFound && ((mpegFound) || (mp4Found && mxfFound))) {
             // close current task
             Process process = ProcessManager.getProcessById(ticket.getProcessId());
             Step stepToClose = null;
@@ -128,17 +150,16 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             if (stepToClose != null) {
                 CloseStepHelper.closeStep(stepToClose, null);
             }
-
-            //delete everything under parent prefix
-            if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
-                String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
-                ObjectListing listing = s3.listObjects(bucket, prefix);
-                for (S3ObjectSummary os : listing.getObjectSummaries()) {
-                    s3.deleteObject(bucket, os.getKey());
-                }
-            }
         }
 
+        //delete everything under parent prefix
+        if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
+            String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
+            ObjectListing listing = s3.listObjects(bucket, prefix);
+            for (S3ObjectSummary os : listing.getObjectSummaries()) {
+                s3.deleteObject(bucket, os.getKey());
+            }
+        }
         return PluginReturnValue.FINISH;
     }
 

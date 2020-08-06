@@ -52,8 +52,7 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
         try {
             workDir = Files.createTempDirectory(UUID.randomUUID().toString());
             zipFile = Paths.get(source);
-            unzip(zipFile, workDir);
-            Path directory = workDir;
+            Path directory = unzip(zipFile, workDir);
 
             //            Files.delete(zipFile);
             // alto files are imported into alto directory
@@ -62,22 +61,25 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
             List<Path> objectFiles = new ArrayList<>();
 
             // check if the extracted file contains a sub folder
-            try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(directory)) {
-                for (Path file : folderFiles) {
-                    if (Files.isDirectory(file) && !file.getFileName().toString().startsWith("__MAC")) {
-                        directory = file;
-                        break;
-                    }
-                }
-            } catch (IOException e1) {
-                log.error(e1);
-            }
+            //            try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(directory)) {
+            //                for (Path file : folderFiles) {
+            //                    if (Files.isDirectory(file) && !file.getFileName().toString().startsWith("__MAC")) {
+            //                        directory = file;
+            //                        break;
+            //                    }
+            //                }
+            //            } catch (IOException e1) {
+            //                log.error(e1);
+            //            }
 
             try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(directory)) {
                 for (Path file : folderFiles) {
-                    if (Files.isDirectory(file) && !file.getFileName().toString().startsWith("__MAC") ) {
+                    if (Files.isDirectory(file) && !file.getFileName().toString().startsWith("__MAC")) {
                         // found unexpected data
-                        LogEntry.build(ticket.getProcessId()).withContent("File import aborted, found unexpected sub folder in zip file.").withType(LogType.INFO).persist();
+                        LogEntry.build(ticket.getProcessId())
+                        .withContent("File import aborted, found unexpected sub folder in zip file.")
+                        .withType(LogType.INFO)
+                        .persist();
                         FileUtils.deleteQuietly(zipFile.toFile());
                         FileUtils.deleteQuietly(workDir.toFile());
                         return PluginReturnValue.ERROR;
@@ -115,7 +117,6 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
             List<String> files = StorageProvider.getInstance().list(masterDir.toString());
             files.addAll(StorageProvider.getInstance().list(derivativeDir.toString()));
 
-
             if (files.isEmpty()) {
                 // import the data only if the process is empty
                 for (Path object : objectFiles) {
@@ -134,7 +135,8 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                     Step stepToClose = null;
 
                     for (Step processStep : process.getSchritte()) {
-                        if (processStep.getBearbeitungsstatusEnum() == StepStatus.OPEN || processStep.getBearbeitungsstatusEnum() == StepStatus.INWORK) {
+                        if (processStep.getBearbeitungsstatusEnum() == StepStatus.OPEN
+                                || processStep.getBearbeitungsstatusEnum() == StepStatus.INWORK) {
                             // check against a list of configured step names ?
                             stepToClose = processStep;
                             break;
@@ -145,7 +147,8 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                     }
                 }
             } else {
-                LogEntry entry = LogEntry.build(ticket.getProcessId()).withContent("File import aborted, directory is not empty").withType(LogType.INFO);
+                LogEntry entry =
+                        LogEntry.build(ticket.getProcessId()).withContent("File import aborted, directory is not empty").withType(LogType.INFO);
                 entry.persist();
             }
 
@@ -164,7 +167,8 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
         return PluginReturnValue.FINISH;
     }
 
-    private void unzip(final Path zipFile, final Path output) throws IOException {
+    public static Path unzip(final Path zipFile, final Path output) throws IOException {
+        Path unzippedFolder = output;
         try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(zipFile))) {
             ZipEntry entry;
             while ((entry = zipInputStream.getNextEntry()) != null) {
@@ -180,5 +184,17 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                 }
             }
         }
+        // check if the extracted file contains a sub folder
+        try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(output)) {
+            for (Path file : folderFiles) {
+                if (Files.isDirectory(file) && !file.getFileName().toString().startsWith("__MAC")) {
+                    unzippedFolder = file;
+                    break;
+                }
+            }
+        } catch (IOException e1) {
+            log.error(e1);
+        }
+        return unzippedFolder;
     }
 }
