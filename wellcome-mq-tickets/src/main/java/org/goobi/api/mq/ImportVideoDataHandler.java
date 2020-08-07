@@ -91,7 +91,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             unzipTticket.setProperties(ticket.getProperties());
             unzipTticket.setStepId(ticket.getStepId());
             unzipTticket.setStepName(ticket.getStepName());
-            unzipTticket.getProperties().put("filename", destinationFolder.toString());
+            unzipTticket.getProperties().put("filename", destinationFile.toString());
             unzipTticket.getProperties().put("closeStep", "true");
             try {
                 TicketGenerator.submitTicket(unzipTticket, QueueType.SLOW_QUEUE);
