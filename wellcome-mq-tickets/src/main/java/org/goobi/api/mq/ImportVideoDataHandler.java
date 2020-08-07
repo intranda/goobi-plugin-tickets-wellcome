@@ -1,5 +1,8 @@
 package org.goobi.api.mq;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -14,6 +17,7 @@ import org.goobi.production.enums.PluginReturnValue;
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.Copy;
 import com.amazonaws.services.s3.transfer.TransferManager;
@@ -64,16 +68,17 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             destinationFile = destinationFolder.resolve(s3Key);
         }
 
-        TransferManager tm = TransferManagerBuilder.standard().withS3Client(s3).withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024)).build();
 
-        Copy copy = tm.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
-        try {
-            copy.waitForCompletion();
-        } catch (AmazonClientException | InterruptedException e) {
-            log.error(e);
-        }
 
         if (type.equals("audio")) {
+
+            try (S3Object obj = s3.getObject(bucket, s3Key); InputStream in = obj.getObjectContent()) {
+                Files.copy(in, destinationFile);
+            } catch (IOException e) {
+                log.error(e);
+                return PluginReturnValue.ERROR;
+            }
+
             TaskTicket unzipTticket = TicketGenerator.generateSimpleTicket("unzip");
             unzipTticket.setProcessId(ticket.getProcessId());
             unzipTticket.setProcessName(ticket.getProcessName());
@@ -87,69 +92,76 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             } catch (JMSException e) {
                 log.error(e);
             }
-        }
+        } else {
+            TransferManager tm =
+                    TransferManagerBuilder.standard().withS3Client(s3).withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024)).build();
 
-        // check if the upload is complete
-        List<String> filenamesInFolder = StorageProvider.getInstance().list(destinationFolder.toString());
-        boolean posterFound = false;
-        boolean mpegFound = false;
-        boolean mp4Found = false;
-        boolean mxfFound = false;
-        // TODO set pdfFound to false to activate the pdf import
-        boolean pdfFound = true;
+            Copy copy = tm.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
+            try {
+                copy.waitForCompletion();
+            } catch (AmazonClientException | InterruptedException e) {
+                log.error(e);
+            }
+            // check if the upload is complete
+            List<String> filenamesInFolder = StorageProvider.getInstance().list(destinationFolder.toString());
+            boolean posterFound = false;
+            boolean mpegFound = false;
+            boolean mp4Found = false;
+            boolean mxfFound = false;
+            // TODO set pdfFound to false to activate the pdf import
+            boolean pdfFound = true;
 
-        for (String filename : filenamesInFolder) {
-            String suffix = filename.substring(filename.indexOf(".") + 1);
-            switch (suffix) {
+            for (String filename : filenamesInFolder) {
+                String suffix = filename.substring(filename.indexOf(".") + 1);
+                switch (suffix) {
 
-                case "jpg":
-                case "JPG":
-                case "jpeg":
-                case "JPEG":
-                    posterFound = true;
-                    break;
-                case "mpg":
-                case "MPG":
-                case "mpeg":
-                case "MPEG":
-                    mpegFound = true;
-                    break;
-                case "mp4":
-                case "MP4":
-                    mp4Found = true;
-                    break;
-                case "mxf":
-                case "MXF":
-                    mxfFound = true;
-                    break;
-                case "pdf":
-                case "PDF":
-                    pdfFound = true;
-                    break;
+                    case "jpg":
+                    case "JPG":
+                    case "jpeg":
+                    case "JPEG":
+                        posterFound = true;
+                        break;
+                    case "mpg":
+                    case "MPG":
+                    case "mpeg":
+                    case "MPEG":
+                        mpegFound = true;
+                        break;
+                    case "mp4":
+                    case "MP4":
+                        mp4Found = true;
+                        break;
+                    case "mxf":
+                    case "MXF":
+                        mxfFound = true;
+                        break;
+                    case "pdf":
+                    case "PDF":
+                        pdfFound = true;
+                        break;
+                }
+            }
+            // upload is complete, if poster + mpg or poster + mp4 + mxf are available
+            if (posterFound && pdfFound && ((mpegFound) || (mp4Found && mxfFound))) {
+                // close current task
+                Process process = ProcessManager.getProcessById(ticket.getProcessId());
+                Step stepToClose = null;
+
+                for (Step processStep : process.getSchritte()) {
+                    if (processStep.getBearbeitungsstatusEnum() == StepStatus.OPEN || processStep.getBearbeitungsstatusEnum() == StepStatus.INWORK) {
+                        stepToClose = processStep;
+                        break;
+                    }
+                }
+                if (stepToClose != null) {
+                    CloseStepHelper.closeStep(stepToClose, null);
+                }
             }
         }
-
         String deleteFiles = ticket.getProperties().get("deleteFiles");
         if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
             s3.deleteObject(bucket, s3Key);
             log.info("deleted file from bucket");
-        }
-
-        // upload is complete, if poster + mpg or poster + mp4 + mxf are available
-        if (posterFound && pdfFound && ((mpegFound) || (mp4Found && mxfFound))) {
-            // close current task
-            Process process = ProcessManager.getProcessById(ticket.getProcessId());
-            Step stepToClose = null;
-
-            for (Step processStep : process.getSchritte()) {
-                if (processStep.getBearbeitungsstatusEnum() == StepStatus.OPEN || processStep.getBearbeitungsstatusEnum() == StepStatus.INWORK) {
-                    stepToClose = processStep;
-                    break;
-                }
-            }
-            if (stepToClose != null) {
-                CloseStepHelper.closeStep(stepToClose, null);
-            }
         }
 
         //delete everything under parent prefix
@@ -160,6 +172,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
                 s3.deleteObject(bucket, os.getKey());
             }
         }
+
         return PluginReturnValue.FINISH;
     }
 
