@@ -71,6 +71,12 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
 
 
         if (type.equals("audio")) {
+            try {
+                StorageProvider.getInstance().createDirectories(destinationFolder);
+            } catch (IOException e1) {
+                log.error("Unable to create temporary directory", e1);
+                return PluginReturnValue.ERROR;
+            }
 
             try (S3Object obj = s3.getObject(bucket, s3Key); InputStream in = obj.getObjectContent()) {
                 Files.copy(in, destinationFile);
