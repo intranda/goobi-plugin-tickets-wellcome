@@ -79,7 +79,7 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             importEPTicket.setProperties(ticket.getProperties());
             importEPTicket.getProperties().put("filename", targetPath.toString());
             try {
-                TicketGenerator.submitTicket(importEPTicket, QueueType.SLOW_QUEUE);
+                TicketGenerator.submitInternalTicket(importEPTicket, QueueType.SLOW_QUEUE);
             } catch (JMSException e) {
                 log.error(e);
             }
@@ -97,7 +97,7 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             unzipTticket.getProperties().put("filename", targetPath.toString());
             unzipTticket.getProperties().put("closeStep", "true");
             try {
-                TicketGenerator.submitTicket(unzipTticket, QueueType.SLOW_QUEUE);
+                TicketGenerator.submitInternalTicket(unzipTticket, QueueType.SLOW_QUEUE);
             } catch (JMSException e) {
                 log.error(e);
             }

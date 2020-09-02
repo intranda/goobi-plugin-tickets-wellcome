@@ -68,8 +68,6 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             destinationFile = destinationFolder.resolve(s3Key);
         }
 
-
-
         if (type.equals("audio")) {
             try {
                 StorageProvider.getInstance().createDirectories(destinationFolder);
@@ -94,7 +92,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             unzipTticket.getProperties().put("filename", destinationFile.toString());
             unzipTticket.getProperties().put("closeStep", "true");
             try {
-                TicketGenerator.submitTicket(unzipTticket, QueueType.SLOW_QUEUE);
+                TicketGenerator.submitInternalTicket(unzipTticket, QueueType.SLOW_QUEUE);
             } catch (JMSException e) {
                 log.error(e);
             }
