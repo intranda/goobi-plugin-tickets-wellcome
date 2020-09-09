@@ -1,8 +1,6 @@
 package org.goobi.api.mq;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -11,8 +9,11 @@ import javax.jms.JMSException;
 import org.apache.commons.lang.StringUtils;
 import org.goobi.production.enums.PluginReturnValue;
 
+import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.transfer.Download;
+import com.amazonaws.services.s3.transfer.TransferManager;
+import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
 
 import de.sub.goobi.helper.S3FileUtils;
 import de.sub.goobi.helper.StorageProvider;
@@ -48,8 +49,9 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             log.error("Unable to create temporary directory", e1);
             return PluginReturnValue.ERROR;
         }
-
         AmazonS3 s3 = S3FileUtils.createS3Client();
+        TransferManager transferManager =
+                TransferManagerBuilder.standard().withS3Client(s3).withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024)).build();
 
         int index = s3Key.lastIndexOf('/');
         Path targetPath;
@@ -59,10 +61,12 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             targetPath = targetDir.resolve(s3Key);
         }
 
-        try (S3Object obj = s3.getObject(bucket, s3Key); InputStream in = obj.getObjectContent()) {
-            Files.copy(in, targetPath);
-        } catch (IOException e) {
+        Download download = transferManager.download(bucket, s3Key, targetPath.toFile());
+        try {
+            download.waitForCompletion();
+        } catch (AmazonClientException | InterruptedException e) {
             log.error(e);
+            // TODO cleanup
             return PluginReturnValue.ERROR;
         }
         log.info("saved file");

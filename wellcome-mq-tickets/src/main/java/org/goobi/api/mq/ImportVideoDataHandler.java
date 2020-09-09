@@ -1,8 +1,6 @@
 package org.goobi.api.mq;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -17,9 +15,9 @@ import org.goobi.production.enums.PluginReturnValue;
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.Copy;
+import com.amazonaws.services.s3.transfer.Download;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
 
@@ -59,7 +57,8 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
 
         AmazonS3 s3 = S3FileUtils.createS3Client();
-
+        TransferManager transferManager =
+                TransferManagerBuilder.standard().withS3Client(s3).withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024)).build();
         int index = s3Key.lastIndexOf('/');
         Path destinationFile;
         if (index != -1) {
@@ -76,10 +75,12 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
                 return PluginReturnValue.ERROR;
             }
 
-            try (S3Object obj = s3.getObject(bucket, s3Key); InputStream in = obj.getObjectContent()) {
-                Files.copy(in, destinationFile);
-            } catch (IOException e) {
+            Download download = transferManager.download(bucket, s3Key, destinationFile.toFile());
+            try {
+                download.waitForCompletion();
+            } catch (AmazonClientException | InterruptedException e) {
                 log.error(e);
+                // TODO cleanup
                 return PluginReturnValue.ERROR;
             }
 
@@ -97,10 +98,9 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
                 log.error(e);
             }
         } else {
-            TransferManager tm =
-                    TransferManagerBuilder.standard().withS3Client(s3).withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024)).build();
 
-            Copy copy = tm.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
+
+            Copy copy = transferManager.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
             try {
                 copy.waitForCompletion();
             } catch (AmazonClientException | InterruptedException e) {
