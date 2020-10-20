@@ -58,7 +58,7 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
         } catch (AmazonClientException | InterruptedException e) {
             log.error(e);
         }
-
+        transferManager.shutdownNow();
         String deleteFiles = ticket.getProperties().get("deleteFiles");
         if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
             s3.deleteObject(bucket, s3Key);

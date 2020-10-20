@@ -67,6 +67,7 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
         } catch (AmazonClientException | InterruptedException e) {
             log.error(e);
             // TODO cleanup
+            transferManager.shutdownNow();
             return PluginReturnValue.ERROR;
         }
         log.info("saved file");
@@ -75,7 +76,7 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             s3.deleteObject(bucket, s3Key);
             log.info("deleted file from bucket");
         }
-
+        transferManager.shutdownNow();
         // check if it is an EP import or a regular one
         if (ticket.getProcessId() == null) {
             log.info("create EP import ticket");

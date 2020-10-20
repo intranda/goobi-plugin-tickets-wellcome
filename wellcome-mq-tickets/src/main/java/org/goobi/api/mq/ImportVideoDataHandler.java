@@ -61,6 +61,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         } catch (AmazonClientException | InterruptedException e) {
             log.error(e);
         }
+        transferManager.shutdownNow();
         // check if the upload is complete
         List<String> filenamesInFolder = StorageProvider.getInstance().list(destinationFolder.toString());
         boolean posterFound = false;
