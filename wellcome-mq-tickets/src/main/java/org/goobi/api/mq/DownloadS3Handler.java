@@ -50,8 +50,12 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             return PluginReturnValue.ERROR;
         }
         AmazonS3 s3 = S3FileUtils.createS3Client();
-        TransferManager transferManager =
-                TransferManagerBuilder.standard().withS3Client(s3).withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024)).build();
+        TransferManager transferManager = TransferManagerBuilder
+                .standard()
+                .withS3Client(s3)
+                .withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024))
+                .withDisableParallelDownloads(true)
+                .build();
 
         int index = s3Key.lastIndexOf('/');
         Path targetPath;
