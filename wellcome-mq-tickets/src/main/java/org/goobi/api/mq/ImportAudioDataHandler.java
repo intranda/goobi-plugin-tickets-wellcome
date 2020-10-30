@@ -79,7 +79,7 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
 
     @Override
     public String getTicketHandlerName() {
-        return "importVideoData";
+        return "importAudioData";
     }
 
 }
