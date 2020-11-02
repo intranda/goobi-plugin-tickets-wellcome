@@ -10,10 +10,7 @@ import org.apache.commons.lang.StringUtils;
 import org.goobi.production.enums.PluginReturnValue;
 
 import com.amazonaws.AmazonClientException;
-import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.transfer.Download;
-import com.amazonaws.services.s3.transfer.TransferManager;
-import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
 
 import de.sub.goobi.helper.S3FileUtils;
 import de.sub.goobi.helper.StorageProvider;
@@ -49,13 +46,7 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             log.error("Unable to create temporary directory", e1);
             return PluginReturnValue.ERROR;
         }
-        AmazonS3 s3 = S3FileUtils.createS3Client();
-        TransferManager transferManager = TransferManagerBuilder
-                .standard()
-                .withS3Client(s3)
-                .withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024))
-                .withDisableParallelDownloads(true)
-                .build();
+
 
         int index = s3Key.lastIndexOf('/');
         Path targetPath;
@@ -64,23 +55,21 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
         } else {
             targetPath = targetDir.resolve(s3Key);
         }
-
-        Download download = transferManager.download(bucket, s3Key, targetPath.toFile());
+        S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
+        Download download = utils.getTransferManager().download(bucket, s3Key, targetPath.toFile());
         try {
             download.waitForCompletion();
         } catch (AmazonClientException | InterruptedException e) {
             log.error(e);
             // TODO cleanup
-            transferManager.shutdownNow();
             return PluginReturnValue.ERROR;
         }
         log.info("saved file");
         String deleteFiles = ticket.getProperties().get("deleteFiles");
         if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
-            s3.deleteObject(bucket, s3Key);
+            utils.getS3().deleteObject(bucket, s3Key);
             log.info("deleted file from bucket");
         }
-        transferManager.shutdownNow();
         // check if it is an EP import or a regular one
         if (ticket.getProcessId() == null) {
             log.info("create EP import ticket");

@@ -341,7 +341,8 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         int refLen = reference.length();
         String keyPrefix = reference.substring(refLen - 2, refLen) + "/" + reference + "/";
         String key = keyPrefix + reference + ".xml";
-        AmazonS3 s3client = S3FileUtils.createS3Client();
+        S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
+        AmazonS3 s3client = utils.getS3();
         return s3client.doesObjectExist(bucket, key);
     }
 

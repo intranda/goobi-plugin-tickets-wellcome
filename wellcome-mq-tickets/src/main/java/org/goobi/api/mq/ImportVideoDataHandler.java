@@ -15,7 +15,6 @@ import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.Copy;
 import com.amazonaws.services.s3.transfer.TransferManager;
-import com.amazonaws.services.s3.transfer.TransferManagerBuilder;
 
 import de.sub.goobi.config.ConfigurationHelper;
 import de.sub.goobi.helper.CloseStepHelper;
@@ -44,9 +43,10 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
 
         log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
 
-        AmazonS3 s3 = S3FileUtils.createS3Client();
-        TransferManager transferManager =
-                TransferManagerBuilder.standard().withS3Client(s3).withMultipartUploadThreshold((long) (1 * 1024 * 1024 * 1024)).build();
+        S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
+        AmazonS3 s3 = utils.getS3();
+        TransferManager transferManager =utils.getTransferManager();
+
         int index = s3Key.lastIndexOf('/');
         Path destinationFile;
         if (index != -1) {
@@ -61,7 +61,6 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         } catch (AmazonClientException | InterruptedException e) {
             log.error(e);
         }
-        transferManager.shutdownNow();
         // check if the upload is complete
         List<String> filenamesInFolder = StorageProvider.getInstance().list(destinationFolder.toString());
         boolean posterFound = false;
