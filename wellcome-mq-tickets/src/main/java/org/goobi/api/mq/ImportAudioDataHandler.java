@@ -8,8 +8,6 @@ import org.goobi.production.enums.PluginReturnValue;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.Copy;
 import com.amazonaws.services.s3.transfer.TransferManager;
 
@@ -60,17 +58,9 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
         String deleteFiles = ticket.getProperties().get("deleteFiles");
         if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
             s3.deleteObject(bucket, s3Key);
-            log.info("deleted file from bucket");
+            log.info("deleted file {} from bucket", s3Key);
         }
 
-        //delete everything under parent prefix
-        if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
-            String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
-            ObjectListing listing = s3.listObjects(bucket, prefix);
-            for (S3ObjectSummary os : listing.getObjectSummaries()) {
-                s3.deleteObject(bucket, os.getKey());
-            }
-        }
 
         return PluginReturnValue.FINISH;
     }
