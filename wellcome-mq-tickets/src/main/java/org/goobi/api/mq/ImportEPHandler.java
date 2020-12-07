@@ -88,7 +88,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         Path directory = null;
         try {
             workDir = Files.createTempDirectory(UUID.randomUUID().toString());
-            directory= UnzipFileHandler.unzip(zipfFile, workDir);
+            directory = UnzipFileHandler.unzip(zipfFile, workDir);
 
         } catch (IOException e2) {
             log.error(e2);
@@ -486,6 +486,9 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             }
 
             name = getValue("Freelance Photog", indexMap, values);
+            if (StringUtils.isBlank(name)) {
+                name = getValue("Freelancer", indexMap, values);
+            }
             if (!name.isEmpty()) {
                 Person p = new Person(prefs.getMetadataTypeByName("Creator"));
                 int lastSpace = name.lastIndexOf(' ');
