@@ -486,10 +486,10 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             }
 
             name = getValue("Freelance Photog", indexMap, values);
-            if (StringUtils.isBlank(name)) {
+            if (name == null) {
                 name = getValue("Freelancer", indexMap, values);
             }
-            if (!name.isEmpty()) {
+            if (!StringUtils.isBlank(name)) {
                 Person p = new Person(prefs.getMetadataTypeByName("Creator"));
                 int lastSpace = name.lastIndexOf(' ');
                 String firstName = name.substring(0, lastSpace);
