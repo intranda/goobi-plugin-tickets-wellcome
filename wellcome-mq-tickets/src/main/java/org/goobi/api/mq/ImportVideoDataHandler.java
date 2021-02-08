@@ -6,22 +6,19 @@ import java.util.List;
 
 import org.apache.commons.lang.StringUtils;
 import org.goobi.beans.Process;
-import org.goobi.beans.Step;
+import org.goobi.beans.Processproperty;
 import org.goobi.production.enums.PluginReturnValue;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.Copy;
 import com.amazonaws.services.s3.transfer.TransferManager;
 
 import de.sub.goobi.config.ConfigurationHelper;
-import de.sub.goobi.helper.CloseStepHelper;
 import de.sub.goobi.helper.S3FileUtils;
 import de.sub.goobi.helper.StorageProvider;
-import de.sub.goobi.helper.enums.StepStatus;
 import de.sub.goobi.persistence.managers.ProcessManager;
+import de.sub.goobi.persistence.managers.PropertyManager;
 import lombok.extern.log4j.Log4j2;
 
 /**
@@ -45,7 +42,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
 
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
         AmazonS3 s3 = utils.getS3();
-        TransferManager transferManager =utils.getTransferManager();
+        TransferManager transferManager = utils.getTransferManager();
 
         int index = s3Key.lastIndexOf('/');
         Path destinationFile;
@@ -101,11 +98,11 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             }
 
             // upload is complete, if poster + mpg or poster + mp4 + mxf are available
-            if (posterFound && pdfFound && ((mpegFound) || (mp4Found && mxfFound))) {
+            /*if (posterFound && pdfFound && ((mpegFound) || (mp4Found && mxfFound))) {
                 // close current task
                 Process process = ProcessManager.getProcessById(ticket.getProcessId());
                 Step stepToClose = null;
-
+            
                 for (Step processStep : process.getSchritte()) {
                     if (processStep.getBearbeitungsstatusEnum() == StepStatus.OPEN || processStep.getBearbeitungsstatusEnum() == StepStatus.INWORK) {
                         stepToClose = processStep;
@@ -115,8 +112,13 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
                 if (stepToClose != null) {
                     CloseStepHelper.closeStep(stepToClose, null);
                 }
-            }
+            }*/
         }
+        Process process = ProcessManager.getProcessById(ticket.getProcessId());
+        addProcesspropertyToProcess(process, "s3_import_bucket", bucket);
+        String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
+        addProcesspropertyToProcess(process, "s3_import_prefix", prefix);
+
         String deleteFiles = ticket.getProperties().get("deleteFiles");
         if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
             s3.deleteObject(bucket, s3Key);
@@ -124,15 +126,24 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         }
 
         //delete everything under parent prefix
-        if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
+        /*if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
             String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
             ObjectListing listing = s3.listObjects(bucket, prefix);
             for (S3ObjectSummary os : listing.getObjectSummaries()) {
                 s3.deleteObject(bucket, os.getKey());
             }
-        }
+        }*/
 
         return PluginReturnValue.FINISH;
+    }
+
+    private void addProcesspropertyToProcess(Process process, String name, String value) {
+        Processproperty pp = new Processproperty();
+        pp.setProzess(process);
+        pp.setTitel(name);
+        pp.setWert(value);
+
+        PropertyManager.saveProcessProperty(pp);
     }
 
     @Override
