@@ -115,9 +115,14 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             }*/
         }
         Process process = ProcessManager.getProcessById(ticket.getProcessId());
-        addProcesspropertyToProcess(process, "s3_import_bucket", bucket);
-        String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
-        addProcesspropertyToProcess(process, "s3_import_prefix", prefix);
+        List<Processproperty> properties = PropertyManager.getProcessPropertiesForProcess(process.getId());
+        if (!properties.stream().anyMatch(pp -> pp.getTitel().equals("s3_import_bucket"))) {
+            addProcesspropertyToProcess(process, "s3_import_bucket", bucket);
+        }
+        if (!properties.stream().anyMatch(pp -> pp.getTitel().equals("s3_import_prefix"))) {
+            String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
+            addProcesspropertyToProcess(process, "s3_import_prefix", prefix);
+        }
 
         String deleteFiles = ticket.getProperties().get("deleteFiles");
         if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
