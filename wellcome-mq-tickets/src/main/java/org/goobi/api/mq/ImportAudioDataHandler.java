@@ -4,6 +4,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import org.apache.commons.lang.StringUtils;
+import org.goobi.beans.LogEntry;
+import org.goobi.beans.Process;
+import org.goobi.beans.Step;
+import org.goobi.production.enums.LogType;
 import org.goobi.production.enums.PluginReturnValue;
 
 import com.amazonaws.AmazonClientException;
@@ -14,6 +18,7 @@ import com.amazonaws.services.s3.transfer.TransferManager;
 import de.sub.goobi.config.ConfigurationHelper;
 import de.sub.goobi.helper.S3FileUtils;
 import de.sub.goobi.helper.StorageProvider;
+import de.sub.goobi.persistence.managers.ProcessManager;
 import lombok.extern.log4j.Log4j2;
 
 /**
@@ -31,14 +36,54 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
         String bucket = ticket.getProperties().get("bucket");
 
         String s3Key = ticket.getProperties().get("s3Key");
-        Path destinationFolder
-        = Paths.get(ticket.getProperties().get("destination"));
+        Path destinationFolder = Paths.get(ticket.getProperties().get("destination"));
 
-
-        log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
         AmazonS3 s3 = utils.getS3();
-        TransferManager transferManager =utils.getTransferManager();
+
+        Process process = ProcessManager.getProcessById(ticket.getProcessId());
+
+        // check process status
+        boolean uploadIsAllowed = false;
+        Step currentStep =  process.getAktuellerSchritt();
+        if (currentStep != null) {
+            // no open step found, abort
+
+            switch (currentStep.getTitel()) {
+                case "Bibliographic import":
+                case "Video data import":
+                case "Audio (Video) data import":
+                case "Audio data import":
+                case "Document import":
+                case "Image upload":
+                case "Import data":
+                case "JP2 upload":
+                case "PDF upload":
+                    //                upload is allowed
+                    uploadIsAllowed = true;
+                    break;
+
+                default:
+                    // process is in a different state, abort
+                    break;
+            }
+        }
+        // delete and abort, if upload isn't allowed
+
+        if (!uploadIsAllowed) {
+            // log entry
+            LogEntry.build(ticket.getProcessId())
+            .withContent("File import aborted, process has not the correct status.")
+            .withType(LogType.ERROR)
+            .persist();
+            s3.deleteObject(bucket, s3Key);
+            log.info("deleted file {} from bucket", s3Key);
+            return PluginReturnValue.ERROR;
+        }
+
+
+        TransferManager transferManager = utils.getTransferManager();
+        log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
         int index = s3Key.lastIndexOf('/');
         Path destinationFile;
         if (index != -1) {
@@ -46,8 +91,6 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
         } else {
             destinationFile = destinationFolder.resolve(s3Key);
         }
-
-
 
         Copy copy = transferManager.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
         try {
@@ -60,7 +103,6 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
             s3.deleteObject(bucket, s3Key);
             log.info("deleted file {} from bucket", s3Key);
         }
-
 
         return PluginReturnValue.FINISH;
     }

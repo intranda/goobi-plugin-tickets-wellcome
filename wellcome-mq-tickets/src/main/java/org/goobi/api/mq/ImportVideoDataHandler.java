@@ -5,8 +5,11 @@ import java.nio.file.Paths;
 import java.util.List;
 
 import org.apache.commons.lang.StringUtils;
+import org.goobi.beans.LogEntry;
 import org.goobi.beans.Process;
 import org.goobi.beans.Processproperty;
+import org.goobi.beans.Step;
+import org.goobi.production.enums.LogType;
 import org.goobi.production.enums.PluginReturnValue;
 
 import com.amazonaws.AmazonClientException;
@@ -33,6 +36,11 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
 
     @Override
     public PluginReturnValue call(TaskTicket ticket) {
+
+
+
+
+
         String bucket = ticket.getProperties().get("bucket");
 
         String s3Key = ticket.getProperties().get("s3Key");
@@ -42,6 +50,48 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
 
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
         AmazonS3 s3 = utils.getS3();
+
+        Process process = ProcessManager.getProcessById(ticket.getProcessId());
+
+        // check process status
+        boolean uploadIsAllowed = false;
+        Step currentStep =  process.getAktuellerSchritt();
+        if (currentStep != null) {
+            // no open step found, abort
+
+            switch (currentStep.getTitel()) {
+                case "Bibliographic import":
+                case "Video data import":
+                case "Audio (Video) data import":
+                case "Audio data import":
+                case "Document import":
+                case "Image upload":
+                case "Import data":
+                case "JP2 upload":
+                case "PDF upload":
+                    //                upload is allowed
+                    uploadIsAllowed = true;
+                    break;
+
+                default:
+                    // process is in a different state, abort
+                    break;
+            }
+        }
+        // delete and abort, if upload isn't allowed
+
+        if (!uploadIsAllowed) {
+            // log entry
+            LogEntry.build(ticket.getProcessId())
+            .withContent("File import aborted, process has not the correct status.")
+            .withType(LogType.ERROR)
+            .persist();
+            s3.deleteObject(bucket, s3Key);
+            log.info("deleted file {} from bucket", s3Key);
+            return PluginReturnValue.ERROR;
+        }
+
+
         TransferManager transferManager = utils.getTransferManager();
 
         int index = s3Key.lastIndexOf('/');
@@ -59,50 +109,50 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             log.error(e);
         }
         // check if the upload is complete
-        List<String> filenamesInFolder = StorageProvider.getInstance().list(destinationFolder.toString());
-        boolean posterFound = false;
-        boolean mpegFound = false;
-        boolean mp4Found = false;
-        boolean mxfFound = false;
-        // TODO set pdfFound to false to activate the pdf import
-        boolean pdfFound = true;
+        //        List<String> filenamesInFolder = StorageProvider.getInstance().list(destinationFolder.toString());
+        //        boolean posterFound = false;
+        //        boolean mpegFound = false;
+        //        boolean mp4Found = false;
+        //        boolean mxfFound = false;
+        //        // TODO set pdfFound to false to activate the pdf import
+        //        boolean pdfFound = true;
 
-        for (String filename : filenamesInFolder) {
-            String suffix = filename.substring(filename.indexOf(".") + 1);
-            switch (suffix) {
+        //        for (String filename : filenamesInFolder) {
+        //            String suffix = filename.substring(filename.indexOf(".") + 1);
+        //            switch (suffix) {
+        //
+        //                case "jpg":
+        //                case "JPG":
+        //                case "jpeg":
+        //                case "JPEG":
+        //                    posterFound = true;
+        //                    break;
+        //                case "mpg":
+        //                case "MPG":
+        //                case "mpeg":
+        //                case "MPEG":
+        //                    mpegFound = true;
+        //                    break;
+        //                case "mp4":
+        //                case "MP4":
+        //                    mp4Found = true;
+        //                    break;
+        //                case "mxf":
+        //                case "MXF":
+        //                    mxfFound = true;
+        //                    break;
+        //                case "pdf":
+        //                case "PDF":
+        //                    pdfFound = true;
+        //                    break;
+        //            }
 
-                case "jpg":
-                case "JPG":
-                case "jpeg":
-                case "JPEG":
-                    posterFound = true;
-                    break;
-                case "mpg":
-                case "MPG":
-                case "mpeg":
-                case "MPEG":
-                    mpegFound = true;
-                    break;
-                case "mp4":
-                case "MP4":
-                    mp4Found = true;
-                    break;
-                case "mxf":
-                case "MXF":
-                    mxfFound = true;
-                    break;
-                case "pdf":
-                case "PDF":
-                    pdfFound = true;
-                    break;
-            }
-
-            // upload is complete, if poster + mpg or poster + mp4 + mxf are available
-            /*if (posterFound && pdfFound && ((mpegFound) || (mp4Found && mxfFound))) {
+        // upload is complete, if poster + mpg or poster + mp4 + mxf are available
+        /*if (posterFound && pdfFound && ((mpegFound) || (mp4Found && mxfFound))) {
                 // close current task
                 Process process = ProcessManager.getProcessById(ticket.getProcessId());
                 Step stepToClose = null;
-            
+
                 for (Step processStep : process.getSchritte()) {
                     if (processStep.getBearbeitungsstatusEnum() == StepStatus.OPEN || processStep.getBearbeitungsstatusEnum() == StepStatus.INWORK) {
                         stepToClose = processStep;
@@ -113,8 +163,8 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
                     CloseStepHelper.closeStep(stepToClose, null);
                 }
             }*/
-        }
-        Process process = ProcessManager.getProcessById(ticket.getProcessId());
+        //        }
+
         List<Processproperty> properties = PropertyManager.getProcessPropertiesForProcess(process.getId());
         if (!properties.stream().anyMatch(pp -> pp.getTitel().equals("s3_import_bucket"))) {
             addProcesspropertyToProcess(process, "s3_import_bucket", bucket);
