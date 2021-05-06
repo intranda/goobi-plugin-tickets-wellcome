@@ -47,7 +47,6 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             return PluginReturnValue.ERROR;
         }
 
-
         int index = s3Key.lastIndexOf('/');
         Path targetPath;
         if (index != -1) {
@@ -77,7 +76,7 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             importEPTicket.setProperties(ticket.getProperties());
             importEPTicket.getProperties().put("filename", targetPath.toString());
             try {
-                TicketGenerator.submitInternalTicket(importEPTicket, QueueType.SLOW_QUEUE);
+                TicketGenerator.submitInternalTicket(importEPTicket, QueueType.SLOW_QUEUE, "EP_import", 0);
             } catch (JMSException e) {
                 log.error(e);
             }
@@ -95,7 +94,7 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             unzipTticket.getProperties().put("filename", targetPath.toString());
             unzipTticket.getProperties().put("closeStep", "true");
             try {
-                TicketGenerator.submitInternalTicket(unzipTticket, QueueType.SLOW_QUEUE);
+                TicketGenerator.submitInternalTicket(unzipTticket, QueueType.SLOW_QUEUE, "unzip", ticket.getProcessId());
             } catch (JMSException e) {
                 log.error(e);
             }
