@@ -57,5 +57,9 @@
         </configuration>
       </plugin>
     </plugins>
-  </build>
+</build>
+<scm>
+    <url>scm:git:ssh://git@gitea.intranda.com:goobi-workflow/goobi-plugin-tickets-wellcome.git</url>
+    <connection>scm:git:ssh://git@gitea.intranda.com:goobi-workflow/goobi-plugin-tickets-wellcome.git</connection>
+  </scm>
 </project>
