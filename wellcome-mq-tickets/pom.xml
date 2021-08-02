@@ -23,7 +23,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
-    <goobi.version>21.06.7</goobi.version>
+    <goobi.version>21.07</goobi.version>
   </properties>
   <dependencies>
     <dependency>
@@ -97,8 +97,8 @@
         </configuration>
       </plugin>
     </plugins>
-</build>
-<scm>
+  </build>
+  <scm>
     <url>scm:git:ssh://git@gitea.intranda.com:goobi-workflow/goobi-plugin-tickets-wellcome.git</url>
     <connection>scm:git:ssh://git@gitea.intranda.com:goobi-workflow/goobi-plugin-tickets-wellcome.git</connection>
   </scm>
