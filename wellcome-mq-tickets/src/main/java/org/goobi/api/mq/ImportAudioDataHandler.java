@@ -2,10 +2,12 @@ package org.goobi.api.mq;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 
 import org.apache.commons.lang.StringUtils;
 import org.goobi.beans.LogEntry;
 import org.goobi.beans.Process;
+import org.goobi.beans.Processproperty;
 import org.goobi.beans.Step;
 import org.goobi.production.enums.LogType;
 import org.goobi.production.enums.PluginReturnValue;
@@ -19,6 +21,7 @@ import de.sub.goobi.config.ConfigurationHelper;
 import de.sub.goobi.helper.S3FileUtils;
 import de.sub.goobi.helper.StorageProvider;
 import de.sub.goobi.persistence.managers.ProcessManager;
+import de.sub.goobi.persistence.managers.PropertyManager;
 import lombok.extern.log4j.Log4j2;
 
 /**
@@ -98,6 +101,17 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
         } catch (AmazonClientException | InterruptedException e) {
             log.error(e);
         }
+
+        List<Processproperty> properties = PropertyManager.getProcessPropertiesForProcess(process.getId());
+        if (!properties.stream().anyMatch(pp -> pp.getTitel().equals("s3_import_bucket"))) {
+            addProcesspropertyToProcess(process, "s3_import_bucket", bucket);
+        }
+        if (!properties.stream().anyMatch(pp -> pp.getTitel().equals("s3_import_prefix"))) {
+            String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
+            addProcesspropertyToProcess(process, "s3_import_prefix", prefix);
+        }
+
+
         String deleteFiles = ticket.getProperties().get("deleteFiles");
         if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
             s3.deleteObject(bucket, s3Key);
@@ -106,6 +120,16 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
 
         return PluginReturnValue.FINISH;
     }
+
+    private void addProcesspropertyToProcess(Process process, String name, String value) {
+        Processproperty pp = new Processproperty();
+        pp.setProzess(process);
+        pp.setTitel(name);
+        pp.setWert(value);
+
+        PropertyManager.saveProcessProperty(pp);
+    }
+
 
     @Override
     public String getTicketHandlerName() {
