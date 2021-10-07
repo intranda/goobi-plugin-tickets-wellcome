@@ -94,6 +94,8 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             log.error(e2);
             FileUtils.deleteQuietly(zipfFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
+            //TODO: move zip file to failed bucket
+            moveZipToFailed(ticket);
             return PluginReturnValue.ERROR;
         }
 
@@ -120,6 +122,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             log.error(e1);
             FileUtils.deleteQuietly(zipfFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
+            moveZipToFailed(ticket);
             return PluginReturnValue.ERROR;
         }
 
@@ -129,31 +132,38 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             if (!wcp) {
                 FileUtils.deleteQuietly(zipfFile.toFile());
                 FileUtils.deleteQuietly(workDir.toFile());
+                moveZipToFailed(ticket);
                 return PluginReturnValue.ERROR;
 
             } else {
                 // process created. Now delete this folder.
-                String deleteFiles = ticket.getProperties().get("deleteFiles");
-                if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
-                    FileUtils.deleteQuietly(zipfFile.toFile());
-                    FileUtils.deleteQuietly(workDir.toFile());
-                    log.info("deleted temporary files");
-                }
+                FileUtils.deleteQuietly(zipfFile.toFile());
+                FileUtils.deleteQuietly(workDir.toFile());
+                S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
+                utils.getS3().deleteObject(ticket.getProperties().get("bucket"), ticket.getProperties().get("key"));
+                return PluginReturnValue.FINISH;
             }
         } catch (FileNotFoundException e) {
             log.error("Cannot import csv file: " + csvFile + "\n", e);
             FileUtils.deleteQuietly(zipfFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
+            moveZipToFailed(ticket);
             return PluginReturnValue.ERROR;
         } catch (PreferencesException | WriteException | ReadException | IOException | InterruptedException | SwapException | DAOException e) {
             log.error("Unable to create Goobi Process\n", e);
             FileUtils.deleteQuietly(zipfFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
+            moveZipToFailed(ticket);
             return PluginReturnValue.ERROR;
         }
-        FileUtils.deleteQuietly(zipfFile.toFile());
-        FileUtils.deleteQuietly(workDir.toFile());
-        return PluginReturnValue.FINISH;
+    }
+
+    private void moveZipToFailed(TaskTicket ticket) {
+        S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
+        String bucket = ticket.getProperties().get("bucket");
+        String key = ticket.getProperties().get("key");
+        utils.getTransferManager().copy(bucket, key, bucket, "failed/" + key);
+        utils.getS3().deleteObject(bucket, key);
     }
 
     private boolean createProcess(Path csvFile, List<Path> tifFiles, Prefs prefs, Process templateNew, Process templateUpdate)
@@ -324,7 +334,11 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
     }
 
     private String getValue(String name, Map<String, Integer> indexMap, List<String[]> values) {
-        return this.getValue(name, 0, indexMap, values);
+        String value = this.getValue(name, 0, indexMap, values);
+        if (value == null) {
+            return "";
+        }
+        return value;
     }
 
     private boolean checkIfExistsOnS3(final String _reference) {
@@ -450,13 +464,25 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             DocStruct dsRoot = dd.createDocStruct(prefs.getDocStrctTypeByName(dsType));
 
             Metadata md = new Metadata(prefs.getMetadataTypeByName("TitleDocMain"));
-            md.setValue(getValue("Title", indexMap, values));
+            String title = getValue("Title", indexMap, values);
+            if (title.isEmpty()) {
+                return null;
+            }
+            md.setValue(title);
             dsRoot.addMetadata(md);
             md = new Metadata(prefs.getMetadataTypeByName("ShootType"));
-            md.setValue(getValue("Shoot Type", indexMap, values));
+            String shootType = getValue("Shoot Type", indexMap, values);
+            if (shootType.isEmpty()) {
+                return null;
+            }
+            md.setValue(shootType);
             dsRoot.addMetadata(md);
             md = new Metadata(prefs.getMetadataTypeByName("CatalogIDDigital"));
-            md.setValue(getValue("Reference", indexMap, values).replaceAll(" |\t", "_"));
+            String reference = getValue("Reference", indexMap, values).replaceAll(" |\t", "_");
+            if (reference.isEmpty()) {
+                return null;
+            }
+            md.setValue(reference);
             dsRoot.addMetadata(md);
             md = new Metadata(prefs.getMetadataTypeByName("PlaceOfPublication"));
             md.setValue(getValue("Location", indexMap, values));
@@ -478,7 +504,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             dsRoot.addMetadata(md);
 
             String name = getValue("Staff Photog", indexMap, values);
-            if (!name.isEmpty()) {
+            if (!StringUtils.isBlank(name)) {
                 Person p = new Person(prefs.getMetadataTypeByName("Photographer"));
                 int lastSpace = name.lastIndexOf(' ');
                 String firstName = name.substring(0, lastSpace);
