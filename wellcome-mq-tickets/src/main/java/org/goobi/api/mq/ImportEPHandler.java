@@ -140,7 +140,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
                 FileUtils.deleteQuietly(zipfFile.toFile());
                 FileUtils.deleteQuietly(workDir.toFile());
                 S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
-                utils.getS3().deleteObject(ticket.getProperties().get("bucket"), ticket.getProperties().get("key"));
+                utils.getS3().deleteObject(ticket.getProperties().get("bucket"), ticket.getProperties().get("s3Key"));
                 return PluginReturnValue.FINISH;
             }
         } catch (FileNotFoundException e) {
@@ -161,7 +161,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
     private void moveZipToFailed(TaskTicket ticket) {
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
         String bucket = ticket.getProperties().get("bucket");
-        String key = ticket.getProperties().get("key");
+        String key = ticket.getProperties().get("s3Key");
         log.debug(ticket.getProperties());
         log.debug("Copying from {}/{} to {}/{}", bucket, key, bucket, "failed/" + key);
         utils.getTransferManager().copy(bucket, key, bucket, "failed/" + key);
