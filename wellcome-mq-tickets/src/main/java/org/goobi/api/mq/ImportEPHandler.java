@@ -162,6 +162,8 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
         String bucket = ticket.getProperties().get("bucket");
         String key = ticket.getProperties().get("key");
+        log.debug(ticket.getProperties());
+        log.debug("Copying from {}/{} to {}/{}", bucket, key, bucket, "failed/" + key);
         utils.getTransferManager().copy(bucket, key, bucket, "failed/" + key);
         utils.getS3().deleteObject(bucket, key);
     }
