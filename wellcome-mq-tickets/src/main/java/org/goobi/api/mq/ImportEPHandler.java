@@ -165,8 +165,8 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         String bucket = ticket.getProperties().get("bucket");
         String key = ticket.getProperties().get("s3Key");
         log.debug(ticket.getProperties());
-        log.debug("Copying from {}/{} to {}/{}", bucket, key, bucket, "failed/" + key);
-        Copy copy = utils.getTransferManager().copy(bucket, key, bucket, "failed/" + key);
+        log.debug("Copying from {}/{} to {}/{}", bucket, key, bucket, "failed/" + key.substring(key.lastIndexOf('/') + 1));
+        Copy copy = utils.getTransferManager().copy(bucket, key, bucket, "failed/" + key.substring(key.lastIndexOf('/') + 1));
         try {
             copy.waitForCompletion();
         } catch (AmazonClientException | InterruptedException e) {
