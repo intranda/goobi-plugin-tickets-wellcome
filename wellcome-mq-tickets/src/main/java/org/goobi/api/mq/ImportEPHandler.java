@@ -31,7 +31,9 @@ import org.goobi.managedbeans.LoginBean;
 import org.goobi.production.enums.PluginReturnValue;
 import org.goobi.production.flow.jobs.HistoryAnalyserJob;
 
+import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.transfer.Copy;
 
 import de.sub.goobi.config.ConfigurationHelper;
 import de.sub.goobi.helper.BeanHelper;
@@ -164,7 +166,13 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         String key = ticket.getProperties().get("s3Key");
         log.debug(ticket.getProperties());
         log.debug("Copying from {}/{} to {}/{}", bucket, key, bucket, "failed/" + key);
-        utils.getTransferManager().copy(bucket, key, bucket, "failed/" + key);
+        Copy copy = utils.getTransferManager().copy(bucket, key, bucket, "failed/" + key);
+        try {
+            copy.waitForCompletion();
+        } catch (AmazonClientException | InterruptedException e) {
+            log.error("Error copying EP shoot {} to failed", key);
+            log.error(e);
+        }
         utils.getS3().deleteObject(bucket, key);
     }
 
