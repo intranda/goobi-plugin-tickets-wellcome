@@ -77,9 +77,9 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                     if (Files.isDirectory(file) && !file.getFileName().toString().startsWith("__MAC")) {
                         // found unexpected data
                         LogEntry.build(ticket.getProcessId())
-                                .withContent("File import aborted, found unexpected sub folder in zip file.")
-                                .withType(LogType.INFO)
-                                .persist();
+                        .withContent("File import aborted, found unexpected sub folder in zip file.")
+                        .withType(LogType.INFO)
+                        .persist();
                         FileUtils.deleteQuietly(zipFile.toFile());
                         FileUtils.deleteQuietly(workDir.toFile());
                         return PluginReturnValue.ERROR;
@@ -121,9 +121,9 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                 // import the data only if the process is empty
                 for (Path object : objectFiles) {
                     if (object.getFileName().toString().toLowerCase().endsWith("jp2")) {
-                        StorageProvider.getInstance().copyFile(object, derivativeDir.resolve(object.getFileName()));
+                        StorageProvider.getInstance().copyFile(object, derivativeDir.resolve(object.getFileName().toString().replace(" ", "")));
                     } else {
-                        StorageProvider.getInstance().copyFile(object, masterDir.resolve(object.getFileName()));
+                        StorageProvider.getInstance().copyFile(object, masterDir.resolve(object.getFileName().toString().replace(" ", "")));
                     }
                 }
 
