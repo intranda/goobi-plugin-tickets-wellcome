@@ -257,7 +257,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         String creators = "";
         String staff = getValue("Staff Photog", indexMap, values);
         String freelance = getValue("Freelance Photog", indexMap, values);
-        if (freelance == null) {
+        if (StringUtils.isNotBlank(freelance)) {
             freelance = getValue("Freelancer", indexMap, values);
         }
         if (staff != null && !staff.isEmpty()) {
@@ -525,7 +525,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             }
 
             name = getValue("Freelance Photog", indexMap, values);
-            if (name == null) {
+            if (StringUtils.isNotBlank(name)) {
                 name = getValue("Freelancer", indexMap, values);
             }
             if (!StringUtils.isBlank(name)) {
