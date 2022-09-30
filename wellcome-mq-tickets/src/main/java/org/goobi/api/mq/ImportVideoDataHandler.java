@@ -5,7 +5,6 @@ import java.nio.file.Paths;
 import java.util.List;
 
 import org.apache.commons.lang.StringUtils;
-import org.goobi.beans.LogEntry;
 import org.goobi.beans.Process;
 import org.goobi.beans.Processproperty;
 import org.goobi.beans.Step;
@@ -18,6 +17,7 @@ import com.amazonaws.services.s3.transfer.Copy;
 import com.amazonaws.services.s3.transfer.TransferManager;
 
 import de.sub.goobi.config.ConfigurationHelper;
+import de.sub.goobi.helper.Helper;
 import de.sub.goobi.helper.S3FileUtils;
 import de.sub.goobi.helper.StorageProvider;
 import de.sub.goobi.persistence.managers.ProcessManager;
@@ -82,10 +82,8 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
 
         if (!uploadIsAllowed) {
             // log entry
-            LogEntry.build(ticket.getProcessId())
-            .withContent("File import aborted, process has not the correct status.")
-            .withType(LogType.ERROR)
-            .persist();
+            Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.ERROR, "File import aborted, process has not the correct status.", "ticket");
+
             s3.deleteObject(bucket, s3Key);
             log.info("deleted file {} from bucket", s3Key);
             return PluginReturnValue.ERROR;
