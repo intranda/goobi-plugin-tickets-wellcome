@@ -13,13 +13,13 @@ import java.util.zip.ZipInputStream;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
-import org.goobi.beans.LogEntry;
 import org.goobi.beans.Process;
 import org.goobi.beans.Step;
 import org.goobi.production.enums.LogType;
 import org.goobi.production.enums.PluginReturnValue;
 
 import de.sub.goobi.helper.CloseStepHelper;
+import de.sub.goobi.helper.Helper;
 import de.sub.goobi.helper.StorageProvider;
 import de.sub.goobi.helper.enums.StepStatus;
 import de.sub.goobi.persistence.managers.ProcessManager;
@@ -76,10 +76,8 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                 for (Path file : folderFiles) {
                     if (Files.isDirectory(file) && !file.getFileName().toString().startsWith("__MAC")) {
                         // found unexpected data
-                        LogEntry.build(ticket.getProcessId())
-                        .withContent("File import aborted, found unexpected sub folder in zip file.")
-                        .withType(LogType.INFO)
-                        .persist();
+                        Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.INFO, "File import aborted, found unexpected sub folder in zip file.", "ticket");
+
                         FileUtils.deleteQuietly(zipFile.toFile());
                         FileUtils.deleteQuietly(workDir.toFile());
                         return PluginReturnValue.ERROR;
@@ -97,7 +95,8 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
             }
 
             if (objectFiles.isEmpty()) {
-                LogEntry.build(ticket.getProcessId()).withContent("File import aborted, found no files to import").withType(LogType.INFO).persist();
+                Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.INFO, "File import aborted, found no files to import.", "ticket");
+
                 FileUtils.deleteQuietly(zipFile.toFile());
                 FileUtils.deleteQuietly(workDir.toFile());
                 return PluginReturnValue.ERROR;
@@ -147,9 +146,7 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
                     }
                 }
             } else {
-                LogEntry entry =
-                        LogEntry.build(ticket.getProcessId()).withContent("File import aborted, directory is not empty").withType(LogType.INFO);
-                entry.persist();
+                Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.INFO, "File import aborted, directory is not empty.", "ticket");
             }
 
             FileUtils.deleteQuietly(zipFile.toFile());
@@ -157,8 +154,8 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
 
         } catch (IOException e) {
             log.error(e);
-            LogEntry entry = LogEntry.build(ticket.getProcessId()).withContent(e.getMessage()).withType(LogType.ERROR);
-            entry.persist();
+            Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.ERROR, e.getMessage(), "ticket");
+
             FileUtils.deleteQuietly(zipFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
             return PluginReturnValue.ERROR;
