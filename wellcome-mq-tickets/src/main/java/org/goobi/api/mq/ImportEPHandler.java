@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -213,7 +212,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         Process process = null;
 
         boolean existsInGoobiNotDone = false;
-        List<Process> processes = ProcessManager.getProcesses("", "prozesse.titel='" + referenceNumber.replaceAll(" |\t", "_") + "'");
+        List<Process> processes = ProcessManager.getProcesses("", "prozesse.titel='" + referenceNumber.replaceAll(" |\t", "_") + "'", null);
         log.debug("found " + processes.size() + " processes with title " + referenceNumber.replaceAll(" |\t", "_"));
         for (Process p : processes) {
             if (!"100000000".equals(p.getSortHelperStatus())) {
@@ -291,7 +290,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         // start work for process
         List<Step> steps = StepManager.getStepsForProcess(process.getId());
         for (Step s : steps) {
-            if (s.getBearbeitungsstatusEnum().equals(StepStatus.OPEN) && s.isTypAutomatisch()) {
+            if (StepStatus.OPEN.equals(s.getBearbeitungsstatusEnum()) && s.isTypAutomatisch()) {
                 ScriptThreadWithoutHibernate myThread = new ScriptThreadWithoutHibernate(s);
                 myThread.start();
             }
@@ -317,9 +316,8 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
 
     private void readIndex(CSVRecord record, Map<String, Integer> indexMap, List<String[]> values) {
         int idx = 0;
-        Iterator<String> titleIt = record.iterator();
-        while (titleIt.hasNext()) {
-            indexMap.put(titleIt.next(), idx);
+        for (String element : record) {
+            indexMap.put(element, idx);
             idx++;
         }
     }
@@ -327,9 +325,8 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
     private void readLine(CSVRecord record, Map<String, Integer> indexMap, List<String[]> values) {
         int idx = 0;
         String[] lineValues = new String[indexMap.size()];
-        Iterator<String> lineIt = record.iterator();
-        while (lineIt.hasNext()) {
-            lineValues[idx] = lineIt.next();
+        for (String element : record) {
+            lineValues[idx] = element;
             idx++;
         }
         values.add(lineValues);
@@ -566,9 +563,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
 
                     page.addContentFile(cf);
 
-                } catch (TypeNotAllowedAsChildException e) {
-                    log.error(e);
-                } catch (MetadataTypeNotAllowedException e) {
+                } catch (TypeNotAllowedAsChildException | MetadataTypeNotAllowedException e) {
                     log.error(e);
                 }
                 pageNo++;
