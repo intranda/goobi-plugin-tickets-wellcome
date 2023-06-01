@@ -40,7 +40,6 @@ import de.sub.goobi.helper.Helper;
 import de.sub.goobi.helper.S3FileUtils;
 import de.sub.goobi.helper.ScriptThreadWithoutHibernate;
 import de.sub.goobi.helper.StorageProvider;
-import de.sub.goobi.helper.enums.PropertyType;
 import de.sub.goobi.helper.enums.StepEditType;
 import de.sub.goobi.helper.enums.StepStatus;
 import de.sub.goobi.helper.exceptions.DAOException;
@@ -391,7 +390,6 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
     private void saveProperty(Process process, String name, String value) {
         Processproperty pe = new Processproperty();
         pe.setTitel(name);
-        pe.setType(PropertyType.STRING);
         pe.setWert(value);
         pe.setProzess(process);
         PropertyManager.saveProcessProperty(pe);
