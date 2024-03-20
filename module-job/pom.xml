@@ -5,6 +5,6 @@
     <artifactId>plugin-tickets-wellcome</artifactId>
     <version>24.03-SNAPSHOT</version>
   </parent>
-  <artifactId>plugin-tickets-wellcome-base</artifactId>
+  <artifactId>plugin-tickets-wellcome-job</artifactId>
   <packaging>jar</packaging>
 </project>

@@ -10,7 +10,7 @@
   <artifactId>plugin-tickets-wellcome</artifactId>
   <packaging>pom</packaging>
   <modules>
-    <module>module-base</module>
+    <module>module-job</module>
   </modules>
   <repositories>
     <repository>
