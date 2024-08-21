@@ -2,7 +2,9 @@ package org.goobi.api.mq;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import org.apache.commons.lang.StringUtils;
 import org.goobi.beans.Process;
@@ -11,11 +13,6 @@ import org.goobi.beans.Step;
 import org.goobi.production.enums.LogType;
 import org.goobi.production.enums.PluginReturnValue;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.transfer.Copy;
-import com.amazonaws.services.s3.transfer.TransferManager;
-
 import de.sub.goobi.config.ConfigurationHelper;
 import de.sub.goobi.helper.Helper;
 import de.sub.goobi.helper.S3FileUtils;
@@ -23,6 +20,12 @@ import de.sub.goobi.helper.StorageProvider;
 import de.sub.goobi.persistence.managers.ProcessManager;
 import de.sub.goobi.persistence.managers.PropertyManager;
 import lombok.extern.log4j.Log4j2;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 
 /**
  * 
@@ -42,13 +45,13 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
         Path destinationFolder = Paths.get(ticket.getProperties().get("destination"));
 
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
-        AmazonS3 s3 = utils.getS3();
+        S3AsyncClient s3 = utils.getS3();
 
         Process process = ProcessManager.getProcessById(ticket.getProcessId());
 
         // check process status
         boolean uploadIsAllowed = false;
-        Step currentStep =  process.getAktuellerSchritt();
+        Step currentStep = process.getAktuellerSchritt();
         if (currentStep != null) {
             // no open step found, abort
 
@@ -75,15 +78,14 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
 
         if (!uploadIsAllowed) {
             // log entry
-            Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.ERROR, "File import aborted, process has not the correct status.", "ticket");
+            Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.ERROR, "File import aborted, process has not the correct status.",
+                    "ticket");
 
-            s3.deleteObject(bucket, s3Key);
+            deleteObject(s3, bucket, s3Key);
             log.info("deleted file {} from bucket", s3Key);
             return PluginReturnValue.ERROR;
         }
 
-
-        TransferManager transferManager = utils.getTransferManager();
         log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
         int index = s3Key.lastIndexOf('/');
         Path destinationFile;
@@ -93,26 +95,28 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
             destinationFile = destinationFolder.resolve(s3Key);
         }
 
-        Copy copy = transferManager.copy(bucket, s3Key, ConfigurationHelper.getInstance().getS3Bucket(), S3FileUtils.path2Key(destinationFile));
-        try {
-            copy.waitForCompletion();
-        } catch (AmazonClientException | InterruptedException e) {
-            log.error(e);
-        }
+        CopyObjectRequest copyReq = CopyObjectRequest.builder()
+                .sourceBucket(bucket)
+                .sourceKey(s3Key)
+                .destinationBucket(ConfigurationHelper.getInstance().getS3Bucket())
+                .destinationKey(S3FileUtils.path2Key(destinationFile))
+                .build();
+
+        CompletableFuture<CopyObjectResponse> copyRes = utils.getS3().copyObject(copyReq);
+        copyRes.join();
 
         List<Processproperty> properties = PropertyManager.getProcessPropertiesForProcess(process.getId());
-        if (!properties.stream().anyMatch(pp -> pp.getTitel().equals("s3_import_bucket"))) {
+        if (!properties.stream().anyMatch(pp -> "s3_import_bucket".equals(pp.getTitel()))) {
             addProcesspropertyToProcess(process, "s3_import_bucket", bucket);
         }
-        if (!properties.stream().anyMatch(pp -> pp.getTitel().equals("s3_import_prefix"))) {
+        if (!properties.stream().anyMatch(pp -> "s3_import_prefix".equals(pp.getTitel()))) {
             String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
             addProcesspropertyToProcess(process, "s3_import_prefix", prefix);
         }
 
-
         String deleteFiles = ticket.getProperties().get("deleteFiles");
-        if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
-            s3.deleteObject(bucket, s3Key);
+        if (StringUtils.isNotBlank(deleteFiles) && "true".equalsIgnoreCase(deleteFiles)) {
+            deleteObject(s3, bucket, s3Key);
             log.info("deleted file {} from bucket", s3Key);
         }
 
@@ -128,10 +132,24 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
         PropertyManager.saveProcessProperty(pp);
     }
 
-
     @Override
     public String getTicketHandlerName() {
         return "importAudioData";
     }
 
+    private void deleteObject(S3AsyncClient s3, String bucket, String key) {
+        ArrayList<ObjectIdentifier> toDelete = new ArrayList<>();
+        toDelete.add(ObjectIdentifier.builder()
+                .key(key)
+                .build());
+
+        DeleteObjectsRequest dor = DeleteObjectsRequest.builder()
+                .bucket(bucket)
+                .delete(Delete.builder()
+                        .objects(toDelete)
+                        .build())
+                .build();
+
+        s3.deleteObjects(dor);
+    }
 }

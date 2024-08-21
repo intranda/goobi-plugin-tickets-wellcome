@@ -3,18 +3,22 @@ package org.goobi.api.mq;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-
-import javax.jms.JMSException;
+import java.util.ArrayList;
 
 import org.apache.commons.lang.StringUtils;
 import org.goobi.production.enums.PluginReturnValue;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.services.s3.transfer.Download;
-
 import de.sub.goobi.helper.S3FileUtils;
 import de.sub.goobi.helper.StorageProvider;
+import jakarta.jms.JMSException;
 import lombok.extern.log4j.Log4j2;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.transfer.s3.model.DownloadFileRequest;
+import software.amazon.awssdk.transfer.s3.model.FileDownload;
+import software.amazon.awssdk.transfer.s3.progress.LoggingTransferListener;
 
 @Log4j2
 public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
@@ -55,18 +59,23 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
             targetPath = targetDir.resolve(s3Key);
         }
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
-        Download download = utils.getTransferManager().download(bucket, s3Key, targetPath.toFile());
-        try {
-            download.waitForCompletion();
-        } catch (AmazonClientException | InterruptedException e) {
-            log.error(e);
-            // TODO cleanup
-            return PluginReturnValue.ERROR;
-        }
+
+        DownloadFileRequest downloadFileRequest =
+                DownloadFileRequest.builder()
+                        .getObjectRequest(req -> req.bucket(bucket).key(s3Key))
+                        .destination(targetPath)
+                        .addTransferListener(LoggingTransferListener.create())
+                        .build();
+
+        FileDownload download = utils.getTransferManager().downloadFile(downloadFileRequest);
+
+        // Wait for the transfer to complete
+        download.completionFuture().join();
+
         log.info("saved file");
         String deleteFiles = ticket.getProperties().get("deleteFiles");
-        if (StringUtils.isNotBlank(deleteFiles) && deleteFiles.equalsIgnoreCase("true")) {
-            utils.getS3().deleteObject(bucket, s3Key);
+        if (StringUtils.isNotBlank(deleteFiles) && "true".equalsIgnoreCase(deleteFiles)) {
+            deleteObject(utils.getS3(), bucket, s3Key);
             log.info("deleted file from bucket");
         }
         // check if it is an EP import or a regular one
@@ -104,4 +113,19 @@ public class DownloadS3Handler implements TicketHandler<PluginReturnValue> {
         return PluginReturnValue.FINISH;
     }
 
+    private void deleteObject(S3AsyncClient s3, String bucket, String key) {
+        ArrayList<ObjectIdentifier> toDelete = new ArrayList<>();
+        toDelete.add(ObjectIdentifier.builder()
+                .key(key)
+                .build());
+
+        DeleteObjectsRequest dor = DeleteObjectsRequest.builder()
+                .bucket(bucket)
+                .delete(Delete.builder()
+                        .objects(toDelete)
+                        .build())
+                .build();
+
+        s3.deleteObjects(dor);
+    }
 }
