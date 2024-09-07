@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.XMLConfiguration;
@@ -30,10 +31,6 @@ import org.goobi.managedbeans.LoginBean;
 import org.goobi.production.enums.PluginReturnValue;
 import org.goobi.production.flow.jobs.HistoryAnalyserJob;
 
-import com.amazonaws.AmazonClientException;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.transfer.Copy;
-
 import de.sub.goobi.config.ConfigurationHelper;
 import de.sub.goobi.helper.BeanHelper;
 import de.sub.goobi.helper.Helper;
@@ -48,6 +45,14 @@ import de.sub.goobi.persistence.managers.ProcessManager;
 import de.sub.goobi.persistence.managers.PropertyManager;
 import de.sub.goobi.persistence.managers.StepManager;
 import lombok.extern.log4j.Log4j2;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import ugh.dl.ContentFile;
 import ugh.dl.DigitalDocument;
 import ugh.dl.DocStruct;
@@ -94,7 +99,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             log.error(e2);
             FileUtils.deleteQuietly(zipfFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
-            //TODO: move zip file to failed bucket
+            // move zip file to failed bucket
             moveZipToFailed(ticket);
             return PluginReturnValue.ERROR;
         }
@@ -140,7 +145,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
                 FileUtils.deleteQuietly(zipfFile.toFile());
                 FileUtils.deleteQuietly(workDir.toFile());
                 S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
-                utils.getS3().deleteObject(ticket.getProperties().get("bucket"), ticket.getProperties().get("s3Key"));
+                deleteObject(utils.getS3(), ticket.getProperties().get("bucket"), ticket.getProperties().get("s3Key"));
                 return PluginReturnValue.FINISH;
             }
         } catch (FileNotFoundException e) {
@@ -164,14 +169,34 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         String key = ticket.getProperties().get("s3Key");
         log.debug(ticket.getProperties());
         log.debug("Copying from {}/{} to {}/{}", bucket, key, bucket, "failed/" + key.substring(key.lastIndexOf('/') + 1));
-        Copy copy = utils.getTransferManager().copy(bucket, key, bucket, "failed/" + key.substring(key.lastIndexOf('/') + 1));
-        try {
-            copy.waitForCompletion();
-        } catch (AmazonClientException | InterruptedException e) {
-            log.error("Error copying EP shoot {} to failed", key);
-            log.error(e);
-        }
-        utils.getS3().deleteObject(bucket, key);
+
+        CopyObjectRequest copyReq = CopyObjectRequest.builder()
+                .sourceBucket(bucket)
+                .sourceKey(key)
+                .destinationBucket(bucket)
+                .destinationKey("failed/" + key.substring(key.lastIndexOf('/') + 1))
+                .build();
+
+        CompletableFuture<CopyObjectResponse> copyRes = utils.getS3().copyObject(copyReq);
+        copyRes.join();
+
+        deleteObject(utils.getS3(), ticket.getProperties().get("bucket"), ticket.getProperties().get("s3Key"));
+    }
+
+    private void deleteObject(S3AsyncClient s3, String bucket, String key) {
+        ArrayList<ObjectIdentifier> toDelete = new ArrayList<>();
+        toDelete.add(ObjectIdentifier.builder()
+                .key(key)
+                .build());
+
+        DeleteObjectsRequest dor = DeleteObjectsRequest.builder()
+                .bucket(bucket)
+                .delete(Delete.builder()
+                        .objects(toDelete)
+                        .build())
+                .build();
+
+        s3.deleteObjects(dor);
     }
 
     private boolean createProcess(Path csvFile, List<Path> tifFiles, Prefs prefs, Process templateNew, Process templateUpdate)
@@ -365,8 +390,16 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         String keyPrefix = reference.substring(refLen - 2, refLen) + "/" + reference + "/";
         String key = keyPrefix + reference + ".xml";
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
-        AmazonS3 s3client = utils.getS3();
-        return s3client.doesObjectExist(bucket, key);
+
+        ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
+                .bucket(bucket)
+                .delimiter("/")
+                .prefix(key);
+
+        CompletableFuture<ListObjectsV2Response> response = utils.getS3().listObjectsV2(requestBuilder.build());
+        ListObjectsV2Response resp = response.toCompletableFuture().join();
+
+        return !resp.contents().isEmpty();
     }
 
     private Process cloneTemplate(Process template) {
