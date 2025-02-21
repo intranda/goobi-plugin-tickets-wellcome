@@ -65,6 +65,7 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
                 case "Import data":
                 case "JP2 upload":
                 case "PDF upload":
+                case "AV file upload":
                     //                upload is allowed
                     uploadIsAllowed = true;
                     break;
