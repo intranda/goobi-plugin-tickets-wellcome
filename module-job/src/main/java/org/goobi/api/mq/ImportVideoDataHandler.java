@@ -64,6 +64,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
                 case "Audio (Video) data import":
                 case "Audio data import":
                 case "Document import":
+                case "AV file upload":
                 case "Image upload":
                 case "Import data":
                 case "JP2 upload":
