@@ -4,7 +4,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 import org.apache.commons.lang.StringUtils;
 import org.goobi.beans.Process;
@@ -22,10 +21,11 @@ import de.sub.goobi.persistence.managers.PropertyManager;
 import lombok.extern.log4j.Log4j2;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
-import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.transfer.s3.S3TransferManager;
+import software.amazon.awssdk.transfer.s3.model.CopyRequest;
 
 /**
  * 
@@ -50,6 +50,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
         S3AsyncClient s3 = utils.getS3();
 
+        S3TransferManager tm = utils.getTransferManager();
         Process process = ProcessManager.getProcessById(ticket.getProcessId());
 
         // check process status
@@ -115,9 +116,7 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
                 .destinationBucket(ConfigurationHelper.getInstance().getS3Bucket())
                 .destinationKey(S3FileUtils.path2Key(destinationFile))
                 .build();
-
-        CompletableFuture<CopyObjectResponse> copyRes = s3.copyObject(copyReq);
-        copyRes.join();
+        tm.copy(CopyRequest.builder().copyObjectRequest(copyReq).build()).completionFuture().join();
 
         List<Processproperty> properties = PropertyManager.getProcessPropertiesForProcess(process.getId());
         if (!properties.stream().anyMatch(pp -> "s3_import_bucket".equals(pp.getTitel()))) {
