@@ -114,9 +114,9 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         String destKey = S3FileUtils.path2Key(destinationFile);
 
         long objectSize = s3.headObject(r -> r.bucket(bucket).key(s3Key)).join().contentLength();
-        long fiveGB = 5L * 1024 * 1024 * 1024;
+        long fiveMB = 5L * 1024 * 1024;
 
-        if (objectSize <= fiveGB) {
+        if (objectSize <= fiveMB) {
             s3.copyObject(b -> b.sourceBucket(bucket).sourceKey(s3Key).destinationBucket(destBucket).destinationKey(destKey)).join();
         } else {
             copyMultipart(s3, bucket, s3Key, destBucket, destKey, objectSize);
