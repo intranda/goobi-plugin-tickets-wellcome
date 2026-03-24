@@ -6,8 +6,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.lang.StringUtils;
+import org.goobi.beans.GoobiProperty;
+import org.goobi.beans.GoobiProperty.PropertyOwnerType;
 import org.goobi.beans.Process;
-import org.goobi.beans.Processproperty;
 import org.goobi.beans.Step;
 import org.goobi.production.enums.LogType;
 import org.goobi.production.enums.PluginReturnValue;
@@ -20,12 +21,12 @@ import de.sub.goobi.persistence.managers.ProcessManager;
 import de.sub.goobi.persistence.managers.PropertyManager;
 import lombok.extern.log4j.Log4j2;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-import software.amazon.awssdk.transfer.s3.S3TransferManager;
-import software.amazon.awssdk.transfer.s3.model.CopyRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartCopyResponse;
 
 /**
  * 
@@ -50,7 +51,6 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
         S3AsyncClient s3 = utils.getS3();
 
-        S3TransferManager tm = utils.getTransferManager();
         Process process = ProcessManager.getProcessById(ticket.getProcessId());
 
         // check process status
@@ -110,19 +110,23 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
             destinationFile = destinationFolder.resolve(s3Key);
         }
 
-        CopyObjectRequest copyReq = CopyObjectRequest.builder()
-                .sourceBucket(bucket)
-                .sourceKey(s3Key)
-                .destinationBucket(ConfigurationHelper.getInstance().getS3Bucket())
-                .destinationKey(S3FileUtils.path2Key(destinationFile))
-                .build();
-        tm.copy(CopyRequest.builder().copyObjectRequest(copyReq).build()).completionFuture().join();
+        String destBucket = ConfigurationHelper.getInstance().getS3Bucket();
+        String destKey = S3FileUtils.path2Key(destinationFile);
 
-        List<Processproperty> properties = PropertyManager.getProcessPropertiesForProcess(process.getId());
-        if (!properties.stream().anyMatch(pp -> "s3_import_bucket".equals(pp.getTitel()))) {
+        long objectSize = s3.headObject(r -> r.bucket(bucket).key(s3Key)).join().contentLength();
+        long fiveGB = 5L * 1024 * 1024 * 1024;
+
+        if (objectSize <= fiveGB) {
+            s3.copyObject(b -> b.sourceBucket(bucket).sourceKey(s3Key).destinationBucket(destBucket).destinationKey(destKey)).join();
+        } else {
+            copyMultipart(s3, bucket, s3Key, destBucket, destKey, objectSize);
+        }
+
+        List<GoobiProperty> properties = PropertyManager.getPropertiesForObject(process.getId(), PropertyOwnerType.PROCESS);
+        if (!properties.stream().anyMatch(pp -> "s3_import_bucket".equals(pp.getPropertyName()))) {
             addProcesspropertyToProcess(process, "s3_import_bucket", bucket);
         }
-        if (!properties.stream().anyMatch(pp -> "s3_import_prefix".equals(pp.getTitel()))) {
+        if (!properties.stream().anyMatch(pp -> "s3_import_prefix".equals(pp.getPropertyName()))) {
             String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
             addProcesspropertyToProcess(process, "s3_import_prefix", prefix);
         }
@@ -147,13 +151,49 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
         return PluginReturnValue.FINISH;
     }
 
-    private void addProcesspropertyToProcess(Process process, String name, String value) {
-        Processproperty pp = new Processproperty();
-        pp.setProzess(process);
-        pp.setTitel(name);
-        pp.setWert(value);
+    private void copyMultipart(S3AsyncClient s3, String srcBucket, String srcKey, String destBucket, String destKey, long objectSize) {
+        long partSize = 64L * 1024 * 1024; // 64 MB
+        String uploadId = s3.createMultipartUpload(b -> b.bucket(destBucket).key(destKey)).join().uploadId();
+        try {
+            List<CompletedPart> completedParts = new ArrayList<>();
+            long offset = 0;
+            int partNumber = 1;
+            while (offset < objectSize) {
+                long end = Math.min(offset + partSize - 1, objectSize - 1);
+                String range = "bytes=" + offset + "-" + end;
+                int pn = partNumber;
+                UploadPartCopyResponse response = s3.uploadPartCopy(b -> b
+                        .sourceBucket(srcBucket)
+                        .sourceKey(srcKey)
+                        .destinationBucket(destBucket)
+                        .destinationKey(destKey)
+                        .uploadId(uploadId)
+                        .partNumber(pn)
+                        .copySourceRange(range))
+                        .join();
+                completedParts.add(CompletedPart.builder().partNumber(pn).eTag(response.copyPartResult().eTag()).build());
+                offset += partSize;
+                partNumber++;
+            }
+            s3.completeMultipartUpload(b -> b
+                    .bucket(destBucket)
+                    .key(destKey)
+                    .uploadId(uploadId)
+                    .multipartUpload(CompletedMultipartUpload.builder().parts(completedParts).build()))
+                    .join();
+        } catch (Exception e) {
+            s3.abortMultipartUpload(b -> b.bucket(destBucket).key(destKey).uploadId(uploadId)).join();
+            throw e;
+        }
+    }
 
-        PropertyManager.saveProcessProperty(pp);
+    private void addProcesspropertyToProcess(Process process, String name, String value) {
+        GoobiProperty pp = new GoobiProperty(PropertyOwnerType.PROCESS);
+        pp.setOwner(process);
+        pp.setPropertyName(name);
+        pp.setPropertyValue(value);
+
+        PropertyManager.saveProperty(pp);
     }
 
     @Override
