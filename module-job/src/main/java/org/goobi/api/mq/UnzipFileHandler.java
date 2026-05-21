@@ -152,12 +152,12 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
             FileUtils.deleteQuietly(zipFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error(e);
             Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.ERROR, e.getMessage(), "ticket");
 
-            FileUtils.deleteQuietly(zipFile.toFile());
-            FileUtils.deleteQuietly(workDir.toFile());
+            FileUtils.deleteQuietly(zipFile != null ? zipFile.toFile() : null);
+            FileUtils.deleteQuietly(workDir != null ? workDir.toFile() : null);
             return PluginReturnValue.ERROR;
         }
 

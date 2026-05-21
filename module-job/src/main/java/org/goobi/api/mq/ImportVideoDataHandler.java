@@ -40,115 +40,119 @@ public class ImportVideoDataHandler implements TicketHandler<PluginReturnValue> 
 
     @Override
     public PluginReturnValue call(TaskTicket ticket) {
+        try {
+            String bucket = ticket.getProperties().get("bucket");
+            String s3Key = ticket.getProperties().get("s3Key");
+            Path destinationFolder = Paths.get(ticket.getProperties().get("destination"));
 
-        String bucket = ticket.getProperties().get("bucket");
+            log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
 
-        String s3Key = ticket.getProperties().get("s3Key");
-        Path destinationFolder = Paths.get(ticket.getProperties().get("destination"));
+            S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
+            S3AsyncClient s3 = utils.getS3();
 
-        log.debug("copy {} to {}", bucket + "/" + s3Key, destinationFolder);
+            Process process = ProcessManager.getProcessById(ticket.getProcessId());
 
-        S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
-        S3AsyncClient s3 = utils.getS3();
+            // check process status
+            boolean uploadIsAllowed = false;
+            Step currentStep = process.getAktuellerSchritt();
+            if (currentStep != null) {
+                // no open step found, abort
 
-        Process process = ProcessManager.getProcessById(ticket.getProcessId());
+                switch (currentStep.getTitel()) {
+                    case "Bibliographic import":
+                    case "Video data import":
+                    case "Audio (Video) data import":
+                    case "Audio data import":
+                    case "Document import":
+                    case "AV file upload":
+                    case "Image upload":
+                    case "Import data":
+                    case "JP2 upload":
+                    case "PDF upload":
+                        //                upload is allowed
+                        uploadIsAllowed = true;
+                        break;
 
-        // check process status
-        boolean uploadIsAllowed = false;
-        Step currentStep = process.getAktuellerSchritt();
-        if (currentStep != null) {
-            // no open step found, abort
-
-            switch (currentStep.getTitel()) {
-                case "Bibliographic import":
-                case "Video data import":
-                case "Audio (Video) data import":
-                case "Audio data import":
-                case "Document import":
-                case "AV file upload":
-                case "Image upload":
-                case "Import data":
-                case "JP2 upload":
-                case "PDF upload":
-                    //                upload is allowed
-                    uploadIsAllowed = true;
-                    break;
-
-                default:
-                    // process is in a different state, abort
-                    break;
+                    default:
+                        // process is in a different state, abort
+                        break;
+                }
             }
-        }
-        // delete and abort, if upload isn't allowed
+            // delete and abort, if upload isn't allowed
 
-        if (!uploadIsAllowed) {
-            // log entry
-            Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.ERROR, "File import aborted, process has not the correct status.",
-                    "ticket");
-            List<ObjectIdentifier> toDelete = new ArrayList<>();
-            toDelete.add(ObjectIdentifier.builder()
-                    .key(s3Key)
-                    .build());
+            if (!uploadIsAllowed) {
+                // log entry
+                Helper.addMessageToProcessJournal(ticket.getProcessId(), LogType.ERROR, "File import aborted, process has not the correct status.",
+                        "ticket");
+                List<ObjectIdentifier> toDelete = new ArrayList<>();
+                toDelete.add(ObjectIdentifier.builder()
+                        .key(s3Key)
+                        .build());
 
-            DeleteObjectsRequest dor = DeleteObjectsRequest.builder()
-                    .bucket(bucket)
-                    .delete(Delete.builder()
-                            .objects(toDelete)
-                            .build())
-                    .build();
+                DeleteObjectsRequest dor = DeleteObjectsRequest.builder()
+                        .bucket(bucket)
+                        .delete(Delete.builder()
+                                .objects(toDelete)
+                                .build())
+                        .build();
 
-            s3.deleteObjects(dor);
-            log.info("deleted file {} from bucket", s3Key);
+                s3.deleteObjects(dor);
+                log.info("deleted file {} from bucket", s3Key);
+                return PluginReturnValue.ERROR;
+            }
+
+            int index = s3Key.lastIndexOf('/');
+            Path destinationFile;
+            if (index != -1) {
+                destinationFile = destinationFolder.resolve(s3Key.substring(index + 1));
+            } else {
+                destinationFile = destinationFolder.resolve(s3Key);
+            }
+
+            String destBucket = ConfigurationHelper.getInstance().getS3Bucket();
+            String destKey = S3FileUtils.path2Key(destinationFile);
+
+            long objectSize = s3.headObject(r -> r.bucket(bucket).key(s3Key)).join().contentLength();
+            long fiveGB = 5L * 1024 * 1024 * 1024;
+
+            if (objectSize <= fiveGB) {
+                s3.copyObject(b -> b.sourceBucket(bucket).sourceKey(s3Key).destinationBucket(destBucket).destinationKey(destKey)).join();
+            } else {
+                copyMultipart(s3, bucket, s3Key, destBucket, destKey, objectSize);
+            }
+
+            List<GoobiProperty> properties = PropertyManager.getPropertiesForObject(process.getId(), PropertyOwnerType.PROCESS);
+            if (!properties.stream().anyMatch(pp -> "s3_import_bucket".equals(pp.getPropertyName()))) {
+                addProcesspropertyToProcess(process, "s3_import_bucket", bucket);
+            }
+            if (!properties.stream().anyMatch(pp -> "s3_import_prefix".equals(pp.getPropertyName()))) {
+                String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
+                addProcesspropertyToProcess(process, "s3_import_prefix", prefix);
+            }
+
+            String deleteFiles = ticket.getProperties().get("deleteFiles");
+            if (StringUtils.isNotBlank(deleteFiles) && "true".equalsIgnoreCase(deleteFiles)) {
+                List<ObjectIdentifier> toDelete = new ArrayList<>();
+                toDelete.add(ObjectIdentifier.builder()
+                        .key(s3Key)
+                        .build());
+                DeleteObjectsRequest dor = DeleteObjectsRequest.builder()
+                        .bucket(bucket)
+                        .delete(Delete.builder()
+                                .objects(toDelete)
+                                .build())
+                        .build();
+
+                s3.deleteObjects(dor);
+                log.info("deleted file from bucket");
+            }
+
+            return PluginReturnValue.FINISH;
+
+        } catch (Exception e) {
+            log.error("Video data import failed", e);
             return PluginReturnValue.ERROR;
         }
-
-        int index = s3Key.lastIndexOf('/');
-        Path destinationFile;
-        if (index != -1) {
-            destinationFile = destinationFolder.resolve(s3Key.substring(index + 1));
-        } else {
-            destinationFile = destinationFolder.resolve(s3Key);
-        }
-
-        String destBucket = ConfigurationHelper.getInstance().getS3Bucket();
-        String destKey = S3FileUtils.path2Key(destinationFile);
-
-        long objectSize = s3.headObject(r -> r.bucket(bucket).key(s3Key)).join().contentLength();
-        long fiveGB = 5L * 1024 * 1024 * 1024;
-
-        if (objectSize <= fiveGB) {
-            s3.copyObject(b -> b.sourceBucket(bucket).sourceKey(s3Key).destinationBucket(destBucket).destinationKey(destKey)).join();
-        } else {
-            copyMultipart(s3, bucket, s3Key, destBucket, destKey, objectSize);
-        }
-
-        List<GoobiProperty> properties = PropertyManager.getPropertiesForObject(process.getId(), PropertyOwnerType.PROCESS);
-        if (!properties.stream().anyMatch(pp -> "s3_import_bucket".equals(pp.getPropertyName()))) {
-            addProcesspropertyToProcess(process, "s3_import_bucket", bucket);
-        }
-        if (!properties.stream().anyMatch(pp -> "s3_import_prefix".equals(pp.getPropertyName()))) {
-            String prefix = s3Key.substring(0, s3Key.lastIndexOf('/'));
-            addProcesspropertyToProcess(process, "s3_import_prefix", prefix);
-        }
-
-        String deleteFiles = ticket.getProperties().get("deleteFiles");
-        if (StringUtils.isNotBlank(deleteFiles) && "true".equalsIgnoreCase(deleteFiles)) {
-            List<ObjectIdentifier> toDelete = new ArrayList<>();
-            toDelete.add(ObjectIdentifier.builder()
-                    .key(s3Key)
-                    .build());
-            DeleteObjectsRequest dor = DeleteObjectsRequest.builder()
-                    .bucket(bucket)
-                    .delete(Delete.builder()
-                            .objects(toDelete)
-                            .build())
-                    .build();
-
-            s3.deleteObjects(dor);
-            log.info("deleted file from bucket");
-        }
-
-        return PluginReturnValue.FINISH;
     }
 
     private void copyMultipart(S3AsyncClient s3, String srcBucket, String srcKey, String destBucket, String destKey, long objectSize) {

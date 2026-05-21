@@ -79,86 +79,65 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
 
     @Override
     public PluginReturnValue call(TaskTicket ticket) {
-
         log.info("start EP import");
 
-        Process templateUpdate = ProcessManager.getProcessById(Integer.parseInt(ticket.getProperties().get("updateTemplateId")));
-        Process templateNew = ProcessManager.getProcessById(Integer.parseInt(ticket.getProperties().get("templateId")));
-
-        Prefs prefs = templateNew.getRegelsatz().getPreferences();
-
-        List<Path> tifFiles = new ArrayList<>();
-        Path zipfFile = Paths.get(ticket.getProperties().get("filename"));
+        Path zipfFile = null;
         Path workDir = null;
-        Path directory = null;
+
         try {
+            Process templateUpdate = ProcessManager.getProcessById(Integer.parseInt(ticket.getProperties().get("updateTemplateId")));
+            Process templateNew = ProcessManager.getProcessById(Integer.parseInt(ticket.getProperties().get("templateId")));
+
+            Prefs prefs = templateNew.getRegelsatz().getPreferences();
+
+            List<Path> tifFiles = new ArrayList<>();
+            zipfFile = Paths.get(ticket.getProperties().get("filename"));
             workDir = Files.createTempDirectory(UUID.randomUUID().toString());
-            directory = UnzipFileHandler.unzip(zipfFile, workDir);
+            Path directory = UnzipFileHandler.unzip(zipfFile, workDir);
 
-        } catch (IOException e2) {
-            log.error(e2);
-            FileUtils.deleteQuietly(zipfFile.toFile());
-            FileUtils.deleteQuietly(workDir.toFile());
-            // move zip file to failed bucket
-            moveZipToFailed(ticket);
-            return PluginReturnValue.ERROR;
-        }
+            log.info("use template " + templateNew.getId());
 
-        log.info("use template " + templateNew.getId());
-
-        Path csvFile = null;
-        // check if the extracted file contains a sub folder
-
-        try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(directory)) {
-            for (Path file : folderFiles) {
-                String fileName = file.getFileName().toString();
-                log.info("found " + fileName);
-                String fileNameLower = fileName.toLowerCase();
-                if (fileNameLower.endsWith(".csv") && !fileNameLower.startsWith(".")) {
-                    csvFile = file;
-                    log.info("set csv file to " + fileName);
-                }
-                if ((fileNameLower.endsWith(".tif") || fileNameLower.endsWith(".tiff") || fileNameLower.endsWith(".mp4"))
-                        && !fileNameLower.startsWith(".")) {
-                    tifFiles.add(file);
+            Path csvFile = null;
+            try (DirectoryStream<Path> folderFiles = Files.newDirectoryStream(directory)) {
+                for (Path file : folderFiles) {
+                    String fileName = file.getFileName().toString();
+                    log.info("found " + fileName);
+                    String fileNameLower = fileName.toLowerCase();
+                    if (fileNameLower.endsWith(".csv") && !fileNameLower.startsWith(".")) {
+                        csvFile = file;
+                        log.info("set csv file to " + fileName);
+                    }
+                    if ((fileNameLower.endsWith(".tif") || fileNameLower.endsWith(".tiff") || fileNameLower.endsWith(".mp4"))
+                            && !fileNameLower.startsWith(".")) {
+                        tifFiles.add(file);
+                    }
                 }
             }
-        } catch (IOException e1) {
-            log.error(e1);
-            FileUtils.deleteQuietly(zipfFile.toFile());
-            FileUtils.deleteQuietly(workDir.toFile());
-            moveZipToFailed(ticket);
-            return PluginReturnValue.ERROR;
-        }
 
-        Collections.sort(tifFiles);
-        try {
+            Collections.sort(tifFiles);
             boolean wcp = createProcess(csvFile, tifFiles, prefs, templateNew, templateUpdate);
             if (!wcp) {
                 FileUtils.deleteQuietly(zipfFile.toFile());
                 FileUtils.deleteQuietly(workDir.toFile());
                 moveZipToFailed(ticket);
                 return PluginReturnValue.ERROR;
-
-            } else {
-                // process created. Now delete this folder.
-                FileUtils.deleteQuietly(zipfFile.toFile());
-                FileUtils.deleteQuietly(workDir.toFile());
-                S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
-                deleteObject(utils.getS3(), ticket.getProperties().get("bucket"), ticket.getProperties().get("s3Key"));
-                return PluginReturnValue.FINISH;
             }
-        } catch (FileNotFoundException e) {
-            log.error("Cannot import csv file: " + csvFile + "\n", e);
+            // process created. Now delete this folder.
             FileUtils.deleteQuietly(zipfFile.toFile());
             FileUtils.deleteQuietly(workDir.toFile());
-            moveZipToFailed(ticket);
-            return PluginReturnValue.ERROR;
-        } catch (PreferencesException | WriteException | ReadException | IOException | InterruptedException | SwapException | DAOException e) {
-            log.error("Unable to create Goobi Process\n", e);
-            FileUtils.deleteQuietly(zipfFile.toFile());
-            FileUtils.deleteQuietly(workDir.toFile());
-            moveZipToFailed(ticket);
+            S3FileUtils utils = (S3FileUtils) StorageProvider.getInstance();
+            deleteObject(utils.getS3(), ticket.getProperties().get("bucket"), ticket.getProperties().get("s3Key"));
+            return PluginReturnValue.FINISH;
+
+        } catch (Exception e) {
+            log.error("EP import failed", e);
+            FileUtils.deleteQuietly(zipfFile != null ? zipfFile.toFile() : null);
+            FileUtils.deleteQuietly(workDir != null ? workDir.toFile() : null);
+            try {
+                moveZipToFailed(ticket);
+            } catch (Exception moveException) {
+                log.error("Failed to move zip to failed bucket", moveException);
+            }
             return PluginReturnValue.ERROR;
         }
     }
