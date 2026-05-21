@@ -168,8 +168,12 @@ public class UnzipFileHandler implements TicketHandler<PluginReturnValue> {
         Path unzippedFolder = output;
         try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(zipFile))) {
             ZipEntry entry;
+            final Path outputBase = output.normalize();
             while ((entry = zipInputStream.getNextEntry()) != null) {
-                final Path toPath = output.resolve(entry.getName());
+                final Path toPath = outputBase.resolve(entry.getName()).normalize();
+                if (!toPath.startsWith(outputBase)) {
+                    throw new IOException("Zip Slip detected, rejecting entry: " + entry.getName());
+                }
                 if (entry.isDirectory()) {
                     Files.createDirectories(toPath);
                 } else {
