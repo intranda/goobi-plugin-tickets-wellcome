@@ -20,11 +20,15 @@ import de.sub.goobi.helper.StorageProvider;
 import de.sub.goobi.persistence.managers.ProcessManager;
 import de.sub.goobi.persistence.managers.PropertyManager;
 import lombok.extern.log4j.Log4j2;
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.UploadPartCopyResponse;
 
@@ -104,7 +108,9 @@ public class ImportAudioDataHandler implements TicketHandler<PluginReturnValue> 
             long fiveMB = 5L * 1024 * 1024;
 
             if (objectSize <= fiveMB) {
-                s3.copyObject(b -> b.sourceBucket(bucket).sourceKey(s3Key).destinationBucket(destBucket).destinationKey(destKey)).join();
+                ResponseBytes<GetObjectResponse> content =
+                        s3.getObject(b -> b.bucket(bucket).key(s3Key), AsyncResponseTransformer.toBytes()).join();
+                s3.putObject(b -> b.bucket(destBucket).key(destKey), AsyncRequestBody.fromBytes(content.asByteArray())).join();
             } else {
                 copyMultipart(s3, bucket, s3Key, destBucket, destKey, objectSize);
             }
