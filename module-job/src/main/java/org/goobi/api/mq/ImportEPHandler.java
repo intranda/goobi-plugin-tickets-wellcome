@@ -24,8 +24,9 @@ import org.apache.commons.csv.CSVRecord;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.SystemUtils;
+import org.goobi.beans.GoobiProperty;
+import org.goobi.beans.GoobiProperty.PropertyOwnerType;
 import org.goobi.beans.Process;
-import org.goobi.beans.Processproperty;
 import org.goobi.beans.Step;
 import org.goobi.managedbeans.LoginBean;
 import org.goobi.production.enums.PluginReturnValue;
@@ -46,13 +47,14 @@ import de.sub.goobi.persistence.managers.PropertyManager;
 import de.sub.goobi.persistence.managers.StepManager;
 import lombok.extern.log4j.Log4j2;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
-import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
+import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.services.s3.model.UploadPartCopyResponse;
 import ugh.dl.ContentFile;
 import ugh.dl.DigitalDocument;
 import ugh.dl.DocStruct;
@@ -149,17 +151,55 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         log.debug(ticket.getProperties());
         log.debug("Copying from {}/{} to {}/{}", bucket, key, bucket, "failed/" + key.substring(key.lastIndexOf('/') + 1));
 
-        CopyObjectRequest copyReq = CopyObjectRequest.builder()
-                .sourceBucket(bucket)
-                .sourceKey(key)
-                .destinationBucket(bucket)
-                .destinationKey("failed/" + key.substring(key.lastIndexOf('/') + 1))
-                .build();
+        S3AsyncClient s3 = utils.getS3();
+        String destKey = "failed/" + key.substring(key.lastIndexOf('/') + 1);
 
-        CompletableFuture<CopyObjectResponse> copyRes = utils.getS3().copyObject(copyReq);
-        copyRes.join();
+        long objectSize = s3.headObject(r -> r.bucket(bucket).key(key)).join().contentLength();
+        long fiveMB = 5L * 1024 * 1024;
 
-        deleteObject(utils.getS3(), ticket.getProperties().get("bucket"), ticket.getProperties().get("s3Key"));
+        if (objectSize <= fiveMB) {
+            s3.copyObject(b -> b.sourceBucket(bucket).sourceKey(key).destinationBucket(bucket).destinationKey(destKey)).join();
+        } else {
+            copyMultipart(s3, bucket, key, bucket, destKey, objectSize);
+        }
+
+        deleteObject(s3, bucket, key);
+    }
+
+    private void copyMultipart(S3AsyncClient s3, String srcBucket, String srcKey, String destBucket, String destKey, long objectSize) {
+        long partSize = 64L * 1024 * 1024; // 64 MB
+        String uploadId = s3.createMultipartUpload(b -> b.bucket(destBucket).key(destKey)).join().uploadId();
+        try {
+            List<CompletedPart> completedParts = new ArrayList<>();
+            long offset = 0;
+            int partNumber = 1;
+            while (offset < objectSize) {
+                long end = Math.min(offset + partSize - 1, objectSize - 1);
+                String range = "bytes=" + offset + "-" + end;
+                int pn = partNumber;
+                UploadPartCopyResponse response = s3.uploadPartCopy(b -> b
+                        .sourceBucket(srcBucket)
+                        .sourceKey(srcKey)
+                        .destinationBucket(destBucket)
+                        .destinationKey(destKey)
+                        .uploadId(uploadId)
+                        .partNumber(pn)
+                        .copySourceRange(range))
+                        .join();
+                completedParts.add(CompletedPart.builder().partNumber(pn).eTag(response.copyPartResult().eTag()).build());
+                offset += partSize;
+                partNumber++;
+            }
+            s3.completeMultipartUpload(b -> b
+                    .bucket(destBucket)
+                    .key(destKey)
+                    .uploadId(uploadId)
+                    .multipartUpload(CompletedMultipartUpload.builder().parts(completedParts).build()))
+                    .join();
+        } catch (Exception e) {
+            s3.abortMultipartUpload(b -> b.bucket(destBucket).key(destKey).uploadId(uploadId)).join();
+            throw e;
+        }
     }
 
     private void deleteObject(S3AsyncClient s3, String bucket, String key) {
@@ -398,11 +438,12 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
     }
 
     private void saveProperty(Process process, String name, String value) {
-        Processproperty pe = new Processproperty();
-        pe.setTitel(name);
-        pe.setWert(value);
-        pe.setProzess(process);
-        PropertyManager.saveProcessProperty(pe);
+        GoobiProperty pp = new GoobiProperty(PropertyOwnerType.PROCESS);
+        pp.setOwner(process);
+        pp.setPropertyName(name);
+        pp.setPropertyValue(value);
+
+        PropertyManager.saveProperty(pp);
     }
 
     private void NeuenProzessAnlegen(Process process, Process template, Fileformat ff, Prefs prefs)
