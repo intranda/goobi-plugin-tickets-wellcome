@@ -1,9 +1,10 @@
 package org.goobi.api.mq;
 
 import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +23,7 @@ import org.apache.commons.configuration.XMLConfiguration;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.input.BOMInputStream;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.SystemUtils;
 import org.goobi.beans.GoobiProperty;
@@ -341,10 +343,12 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         return true;
     }
 
-    private void readFile(Path csvFile, Map<String, Integer> indexMap, List<String[]> values) throws FileNotFoundException, IOException {
+    void readFile(Path csvFile, Map<String, Integer> indexMap, List<String[]> values) throws FileNotFoundException, IOException {
         boolean firstLine = true;
 
-        try (Reader r = new FileReader(csvFile.toFile())) {
+        // the csv files are usually exported from Excel and start with a byte order mark, strip it,
+        // otherwise it becomes part of the name of the first column
+        try (Reader r = new InputStreamReader(BOMInputStream.builder().setPath(csvFile).get(), StandardCharsets.UTF_8)) {
             Iterable<CSVRecord> records = CSVFormat.RFC4180.parse(r);
             for (CSVRecord record : records) {
                 if (firstLine) {
@@ -375,7 +379,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         values.add(lineValues);
     }
 
-    private String getValue(String name, int row, Map<String, Integer> indexMap, List<String[]> values) {
+    String getValue(String name, int row, Map<String, Integer> indexMap, List<String[]> values) {
         Integer index = indexMap.get(name);
         if (index == null) {
             return null;
@@ -383,7 +387,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
         return values.get(row)[index];
     }
 
-    private String getValue(String name, Map<String, Integer> indexMap, List<String[]> values) {
+    String getValue(String name, Map<String, Integer> indexMap, List<String[]> values) {
         String value = this.getValue(name, 0, indexMap, values);
         if (value == null) {
             return "";
@@ -571,7 +575,7 @@ public class ImportEPHandler implements TicketHandler<PluginReturnValue> {
             }
 
             name = getValue("Freelance Photog", indexMap, values);
-            if (StringUtils.isNotBlank(name)) {
+            if (StringUtils.isBlank(name)) {
                 name = getValue("Freelancer", indexMap, values);
             }
             if (!StringUtils.isBlank(name)) {
